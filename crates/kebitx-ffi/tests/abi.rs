@@ -65,5 +65,19 @@ fn a_report_carries_counts_and_explained_issues() {
     }
     let w = analyze(&fixture("world_compat")).expect("a report");
     assert_eq!(w.get("mode").and_then(Json::as_str), Some("world"));
-    assert_eq!(w.get("compat_errors"), Some(&Json::Num(4.0)));
+    // three errors the files decide alone, plus a `min_engine_version` above
+    // the installed game: only checked when there is a game with a known
+    // version (none on a CI machine), as the report itself says
+    let game_known = w
+        .get("game_version")
+        .and_then(Json::as_str)
+        .and_then(kebitx_core::manifest::parse_version)
+        .is_some();
+    let expected = if game_known { 4.0 } else { 3.0 };
+    assert_eq!(
+        w.get("compat_errors"),
+        Some(&Json::Num(expected)),
+        "game version: {:?}",
+        w.get("game_version")
+    );
 }
