@@ -1,0 +1,2 @@
+{"format_version": 2, "header": {"name": "rp", "uuid": "66666666-0000-0000-0000-000000000001", "version": [1,0,0]},
+ "modules": [{"type": "resources", "uuid": "66666666-0000-0000-0000-000000000002", "version": [1,0,0]}]}

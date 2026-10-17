@@ -1,0 +1,1 @@
+{ "map_image": { "type": "image", "texture": "('textures/ui/maps/' + #map_name)" } }

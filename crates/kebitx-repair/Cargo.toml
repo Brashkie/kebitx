@@ -1,0 +1,9 @@
+[package]
+name = "kebitx-repair"
+description = "Safe, verifiable repairs: preview, backup, surgical edits, a second analysis, rollback"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kebitx-core.workspace = true

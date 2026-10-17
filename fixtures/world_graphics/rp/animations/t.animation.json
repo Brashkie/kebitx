@@ -1,0 +1,6 @@
+{ "format_version": "1.8.0", "animations": {
+  "animation.t.look":    { "bones": { "head": { "rotation": [0, 0, 0] } } },
+  "animation.t.partial": { "bones": { "head": {}, "leftarm": {} } },
+  "animation.t.nothing": { "bones": { "backpack": { "position": [-6.5, -12, 1] } } },
+  "animation.t.dup":     { "bones": { "b": {} } }
+} }

@@ -1,0 +1,15 @@
+[package]
+name = "kebitx-build"
+description = "Add-on builder: filters over a scratch copy, the analysis as a gate, export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kebitx-core.workspace = true
+
+# An example filter, and the one the tests run: it shows the whole filter
+# contract (environment variables, working directory, exit code).
+[[bin]]
+name = "kebitx-filter-example"
+path = "src/bin/filter_example.rs"

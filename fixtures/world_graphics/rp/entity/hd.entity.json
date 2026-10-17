@@ -1,0 +1,4 @@
+{ "format_version": "1.10.0", "minecraft:client_entity": { "description": {
+  "identifier": "test:hd", "materials": { "default": "entity_alphatest" },
+  "textures": { "default": "textures/entity/hd" }, "geometry": { "default": "geometry.ok" },
+  "render_controllers": [ "controller.render.direct" ] } } }

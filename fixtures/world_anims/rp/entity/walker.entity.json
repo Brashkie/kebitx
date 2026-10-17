@@ -1,0 +1,23 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "test:walker",
+      "textures": {},
+      "geometry": {},
+      "animations": {
+        "walk": "animation.walker.walk",
+        "move": "controller.animation.walker.move",
+        "ghost": "animation.walker.ghost",
+        "thrown": "controller.animation.walker.thrown"
+      },
+      "animation_controllers": [
+        { "legacy": "controller.animation.walker.move" }
+      ],
+      "render_controllers": [
+        "controller.render.walker",
+        { "controller.render.walker_missing": "query.is_baby" }
+      ],
+    }
+  }
+}

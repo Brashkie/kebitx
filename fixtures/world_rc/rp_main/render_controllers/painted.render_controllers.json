@@ -1,0 +1,27 @@
+{
+  "format_version": "1.8.0",
+  "render_controllers": {
+    "controller.render.painted_ok": {
+      "geometry": "Geometry.default",
+      "materials": [ { "*": "Material.default" } ],
+      "textures": [ "Texture.default", "texture.DEFAULT" ]
+    },
+    "controller.render.painted_bad": {
+      "arrays": {
+        "textures": {
+          "Array.skins": [ "Texture.default", "Texture.gone" ],
+          "Array.none":  [ "Texture.x", "Texture.y" ]
+        }
+      },
+      "geometry": "Geometry.missing",
+      "materials": [ { "*": "Material.nope" }, { "wing": "Material.other" } ],
+      "textures": [
+        "Texture.nope",
+        "Array.skins[query.variant]",
+        "array.none[query.variant]",
+        "Array.undefined[0]",
+        "query.is_baby ? texture.default : texture.nope2"
+      ]
+    }
+  }
+}

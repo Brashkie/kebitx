@@ -1,0 +1,12 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "test:painted",
+      "materials": { "default": "entity_alphatest" },
+      "textures": { "default": "textures/entity/painted" },
+      "geometry": { "default": "geometry.painted" },
+      "render_controllers": [ "controller.render.painted_ok", "controller.render.painted_bad" ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "materials": {
+    "version": "1.0.0",
+    "entity_static": {},
+    "entity_alphatest:entity_static": {}
+  }
+}

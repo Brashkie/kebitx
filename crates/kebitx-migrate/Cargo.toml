@@ -1,0 +1,12 @@
+[package]
+name = "kebitx-migrate"
+description = "Java Edition resource packs to Bedrock: a compatibility report first, then what provably converts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kebitx-core.workspace = true
+
+[dev-dependencies]
+kebitx-build.workspace = true

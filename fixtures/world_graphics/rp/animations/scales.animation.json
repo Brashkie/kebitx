@@ -1,0 +1,6 @@
+{ "format_version": "1.8.0", "animations": {
+  "animation.s.hide":   { "bones": { "arm": { "scale": 0 } } },
+  "animation.s.big":    { "bones": { "arm": { "scale": { "0.0": [1, 1, 1], "1.0": { "post": [25, 1, 1] } } } } },
+  "animation.s.molang": { "bones": { "arm": { "scale": "q.anim_time" } } },
+  "animation.s.flat":   { "bones": { "arm": { "scale": [1, 0, 1] } } }
+} }

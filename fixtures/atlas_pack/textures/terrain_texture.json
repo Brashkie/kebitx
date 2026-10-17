@@ -1,0 +1,16 @@
+{
+  // comentarios y coma final: como en los packs reales
+  "resource_pack_name": "atlas",
+  "texture_data": {
+    "plain":      { "textures": "textures/blocks/stone" },
+    "with_ext":   { "textures": "textures/blocks/stone.png" },
+    "tinted":     { "textures": { "path": "textures/blocks/tinted", "overlay_color": "#cef586" } },
+    "tint_only":  { "textures": ["#8ab689", "textures/blocks/stone"] },
+    "variations": { "textures": { "variations": [ { "path": "textures/blocks/var/v1", "weight": 10 },
+                                                   { "path": "textures/blocks/var/v2", "weight": 1 } ] } },
+    "per_face":   { "textures": [ { "variations": [ { "path": "textures/blocks/var/v1" } ] },
+                                  { "variations": [ { "path": "textures/blocks/var/v2" } ] } ] },
+    "emptied":    { "textures": [] },
+    "wrong_case": { "textures": "textures/blocks/desert/desert_3" },
+  }
+}

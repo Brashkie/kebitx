@@ -1,0 +1,135 @@
+# Every change: formatting, lint, every test on three systems, a short fuzzing
+# pass, the documentation, every shipped target, and the Zig consumer.
+# The tests do not need Minecraft: fixtures use an empty or fake game catalog,
+# and the tests against the real installed games skip themselves where there is none.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# a newer push to the same branch or pull request cancels the older run
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+  rust:
+    name: Test (${{ matrix.os }})
+    needs: fmt
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --no-fail-fast
+      - name: Fuzzing (short pass)
+        env:
+          KEBITX_FUZZ_ITERS: "3000"
+        run: cargo test -p kebitx-core --test fuzz_smoke --release
+      - name: The CLI runs and reports its version
+        shell: bash
+        run: |
+          cargo run -q -p kebitx-cli -- --version
+          set +e
+          cargo run -q -p kebitx-cli -- analyze fixtures/horse_pack
+          code=$?
+          set -e
+          echo "exit code: $code"
+          test $code -eq 0 || { echo "::error::analyze fixtures/horse_pack should be clean"; exit 1; }
+
+  docs:
+    name: Documentation
+    needs: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo doc (warnings are errors)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
+
+  # the code that only compiles elsewhere (no Windows parts): every target
+  # kebitx ships for, checked without the benches' C dependencies
+  targets:
+    name: Check (${{ matrix.target }})
+    needs: fmt
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-musl
+          - aarch64-linux-android
+          - x86_64-apple-darwin
+          - x86_64-pc-windows-gnu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Clippy (libraries and binaries)
+        run: cargo clippy --workspace --lib --bins --target ${{ matrix.target }} -- -D warnings
+
+  zig:
+    name: Zig consumer (C ABI)
+    needs: fmt
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.1
+      - name: Build the C ABI
+        run: cargo build --release -p kebitx-ffi
+      - name: Zig tests and build (ReleaseSafe)
+        working-directory: native/zig/kebitx-check
+        run: |
+          zig build test
+          zig build
+      - name: The Zig consumer analyses a fixture through the C ABI
+        shell: bash
+        run: |
+          set +e
+          native/zig/kebitx-check/zig-out/bin/kebitx-check target/release/kebitx_ffi.dll fixtures/atlas_pack
+          code=$?
+          set -e
+          # the fixture has one empty texture set and one case mismatch
+          test $code -eq 1 || { echo "::error::expected exit 1 from the fixture, got $code"; exit 1; }

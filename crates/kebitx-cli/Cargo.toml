@@ -1,0 +1,16 @@
+[package]
+name = "kebitx-cli"
+description = "Command-line interface for the kebitx engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "kebitx"
+path = "src/main.rs"
+
+[dependencies]
+kebitx-core.workspace = true
+kebitx-build.workspace = true
+kebitx-repair.workspace = true
+kebitx-migrate.workspace = true

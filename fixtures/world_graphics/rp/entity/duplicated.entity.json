@@ -1,0 +1,2 @@
+{ "format_version": "1.10.0", "minecraft:client_entity": { "description": {
+  "identifier": "test:duplicated", "textures": {}, "geometry": { "default": "geometry.dup" }, "animations": { "dup": "animation.t.dup" } } } }

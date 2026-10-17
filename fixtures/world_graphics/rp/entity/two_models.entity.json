@@ -1,0 +1,2 @@
+{ "format_version": "1.10.0", "minecraft:client_entity": { "description": {
+  "identifier": "test:two_models", "textures": {}, "geometry": { "default": "geometry.ok", "baby": "geometry.legacy_parent" }, "animations": { "look": "animation.t.look" } } } }

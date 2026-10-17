@@ -1,0 +1,5 @@
+{ "format_version": "1.8.0", "render_controllers": {
+  "controller.render.direct": { "geometry": "Geometry.default", "materials": [ { "*": "Material.default" } ], "textures": [ "Texture.default" ] },
+  "controller.render.flip": { "geometry": "Geometry.default", "materials": [ { "*": "Material.default" } ], "textures": [ "Texture.default" ],
+    "uv_anim": { "offset": [0, "math.mod(math.floor(q.life_time * 10), 100) / 100"], "scale": [1, "1 / 100"] } }
+} }

@@ -1,0 +1,12 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "test:copied_cow",
+      "textures": {},
+      "geometry": { "default": "geometry.cow" },
+      "animations": { "server": "controller.animation.server_only" },
+      "render_controllers": [ "controller.render.cow" ]
+    }
+  }
+}

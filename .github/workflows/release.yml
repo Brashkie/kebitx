@@ -1,0 +1,209 @@
+# A tag `vX.Y.Z` publishes the release "Kebitx X.Y.Z":
+#   1. the tag must match the version in Cargo.toml, and CHANGELOG.md must have
+#      a section for it;
+#   2. every test runs again;
+#   3. the CLI (and the C ABI library where the target supports it) is built
+#      for each platform and packed with README, CHANGELOG, LICENSE and the C header;
+#   4. the release is created with the CHANGELOG section as its notes and a
+#      SHA256SUMS file. A tag with a suffix (`v2.1.0-rc.1`) is a pre-release.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish, e.g. v2.0.0"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: Check version and notes
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - id: meta
+        name: Tag, Cargo.toml and CHANGELOG agree
+        shell: bash
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          cargo_version=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' Cargo.toml)
+          if [ "$version" != "$cargo_version" ]; then
+            echo "::error file=Cargo.toml::tag $tag does not match the workspace version $cargo_version"
+            exit 1
+          fi
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::no section '## [$version]' in CHANGELOG.md"
+            exit 1
+          fi
+          case "$version" in *-*) pre=true ;; *) pre=false ;; esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
+          echo "Releasing Kebitx $version (pre-release: $pre)" >> "$GITHUB_STEP_SUMMARY"
+
+  test:
+    name: Tests before release
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace --no-fail-fast
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: [prepare, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest,   ffi: true }
+          - { target: x86_64-unknown-linux-gnu,   os: ubuntu-22.04,     ffi: true }
+          - { target: aarch64-unknown-linux-gnu,  os: ubuntu-22.04-arm, ffi: true }
+          # static binaries: any Linux, and Android from a terminal (Termux, adb shell)
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-22.04,     ffi: false, musl: true }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-22.04-arm, ffi: false, musl: true }
+          - { target: aarch64-apple-darwin,       os: macos-latest,     ffi: true }
+          - { target: x86_64-apple-darwin,        os: macos-latest,     ffi: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: musl tools
+        if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build the CLI
+        run: cargo build --release --locked -p kebitx-cli --target ${{ matrix.target }}
+      - name: Build the C ABI library
+        if: matrix.ffi
+        run: cargo build --release --locked -p kebitx-ffi --target ${{ matrix.target }}
+      - name: Package
+        id: pkg
+        shell: bash
+        run: |
+          name="kebitx-${{ needs.prepare.outputs.version }}-${{ matrix.target }}"
+          out="target/${{ matrix.target }}/release"
+          mkdir -p "dist/$name"
+          cp README.md CHANGELOG.md LICENSE "dist/$name/"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "$out/kebitx.exe" "dist/$name/"
+          else
+            cp "$out/kebitx" "dist/$name/"
+          fi
+          if [[ "${{ matrix.ffi }}" == "true" ]]; then
+            mkdir -p "dist/$name/include"
+            cp crates/kebitx-ffi/include/kebitx.h "dist/$name/include/"
+            for lib in kebitx_ffi.dll kebitx_ffi.dll.lib libkebitx_ffi.so libkebitx_ffi.dylib; do
+              [ -f "$out/$lib" ] && cp "$out/$lib" "dist/$name/"
+            done
+          fi
+          cd dist
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+            echo "file=dist/$name.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -czf "$name.tar.gz" "$name"
+            echo "file=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+      # every build runs natively on its runner, except Intel macOS (built on Apple Silicon)
+      - name: Smoke test
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/kebitx"
+          [[ "${{ matrix.target }}" == *windows* ]] && bin="$bin.exe"
+          "$bin" --version | grep -F "${{ needs.prepare.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kebitx-${{ matrix.target }}
+          path: ${{ steps.pkg.outputs.file }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish "Kebitx ${{ needs.prepare.outputs.version }}"
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+          # the lines between "## [<version>]" and the next "## [" section,
+          # without the link references at the bottom of the file
+          awk -v head="## [$version]" '
+            index($0, head) == 1 { on = 1; next }
+            on && index($0, "## [") == 1 { exit }
+            on && index($0, "[") == 1 && index($0, "]: http") > 0 { next }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "::error file=CHANGELOG.md::empty notes for $version"; exit 1; }
+          {
+            echo
+            echo "---"
+            echo
+            echo "**Downloads.** Pick the archive for your system; each one has the \`kebitx\` CLI,"
+            echo "README, CHANGELOG and LICENSE (and, except for the static musl builds, the C ABI"
+            echo "library with \`include/kebitx.h\`). Verify with \`SHA256SUMS\`."
+            echo
+            echo "| System | Archive |"
+            echo "|---|---|"
+            echo "| Windows x64 | \`kebitx-$version-x86_64-pc-windows-msvc.zip\` |"
+            echo "| Linux x64 | \`kebitx-$version-x86_64-unknown-linux-gnu.tar.gz\` (static: \`-musl\`) |"
+            echo "| Linux ARM64 | \`kebitx-$version-aarch64-unknown-linux-gnu.tar.gz\` (static: \`-musl\`) |"
+            echo "| Android (Termux) | \`kebitx-$version-aarch64-unknown-linux-musl.tar.gz\` |"
+            echo "| macOS Apple Silicon | \`kebitx-$version-aarch64-apple-darwin.tar.gz\` |"
+            echo "| macOS Intel | \`kebitx-$version-x86_64-apple-darwin.tar.gz\` |"
+          } >> notes.md
+          cat notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Kebitx ${{ needs.prepare.outputs.version }}
+          body_path: notes.md
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          make_latest: ${{ needs.prepare.outputs.prerelease == 'true' && 'false' || 'true' }}
+          files: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true

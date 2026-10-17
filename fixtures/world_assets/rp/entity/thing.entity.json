@@ -1,0 +1,17 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "test:thing",
+      "textures": {
+        "default": "textures/entity/used",
+        "upper": "textures/entity/upper",
+        "a": "textures/dup/a", "b": "textures/dup/b", "c": "textures/dup/c"
+      },
+      "geometry": { "default": "geometry.thing", "child": "geometry.child" },
+      "animations": { "walk": "animation.thing.walk", "move": "controller.animation.thing.move" },
+      "render_controllers": [ "controller.render.thing" ]
+      // don't forget "sounds/comment" for the next version
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{"format_version": 2,
+ "header": {"name": "bp_a", "uuid": "aaaaaaaa-0000-0000-0000-000000000001", "version": [1,0,0], "min_engine_version": [1,30,0]},
+ "modules": [{"type": "data", "uuid": "aaaaaaaa-0000-0000-0000-000000000002", "version": [1,0,0]}],
+ "dependencies": [
+   {"uuid": "cccccccc-0000-0000-0000-000000000001", "version": [1,0,0]},
+   {"uuid": "dddddddd-0000-0000-0000-00000000dead", "version": [1,0,0]},
+   {"module_name": "@minecraft/server", "version": "1.11.0"}
+ ]}

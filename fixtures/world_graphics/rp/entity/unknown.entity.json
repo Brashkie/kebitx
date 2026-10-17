@@ -1,0 +1,2 @@
+{ "format_version": "1.10.0", "minecraft:client_entity": { "description": {
+  "identifier": "test:unknown", "textures": {}, "geometry": { "default": "geometry.only_in_the_game" }, "animations": { "look": "animation.t.look" } } } }

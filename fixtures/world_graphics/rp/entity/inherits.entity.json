@@ -1,0 +1,2 @@
+{ "format_version": "1.10.0", "minecraft:client_entity": { "description": {
+  "identifier": "test:inherits", "textures": {}, "geometry": { "default": "geometry.legacy_child" }, "animations": { "look": "animation.t.look", "partial": "animation.t.partial", "nothing": "animation.t.nothing" } } } }
