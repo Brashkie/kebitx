@@ -42,9 +42,9 @@ impl Rgba {
     /// The picture as it is SEEN: a fully transparent pixel has no colour, so
     /// two images that differ only under alpha 0 compare equal.
     pub fn visible(mut self) -> Self {
-        for p in self.pixels.chunks_exact_mut(4) {
+        for p in self.pixels.as_chunks_mut::<4>().0 {
             if p[3] == 0 {
-                p.copy_from_slice(&[0, 0, 0, 0]);
+                *p = [0, 0, 0, 0];
             }
         }
         self
@@ -134,8 +134,10 @@ pub fn decode(data: &[u8]) -> Result<Rgba, String> {
             }
             b"PLTE" => {
                 palette = body
-                    .chunks_exact(3)
-                    .map(|c| [c[0], c[1], c[2], 255])
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|&[r, g, b]| [r, g, b, 255])
                     .collect()
             }
             b"tRNS" => trns = body.to_vec(),

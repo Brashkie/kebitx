@@ -59,7 +59,13 @@ pub fn is_material_map(stem: &str) -> bool {
 /// shape lay their parts out the same way, whatever their colours.
 pub fn mask_hash(img: &Rgba) -> Option<u64> {
     let total = img.pixels.len() / 4;
-    let drawn = img.pixels.chunks_exact(4).filter(|p| p[3] > 0).count();
+    let drawn = img
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|p| p[3] > 0)
+        .count();
     if drawn < 32 || drawn * 20 < total || (total - drawn) * 20 < total {
         return None;
     }
@@ -72,7 +78,9 @@ pub fn mask_hash(img: &Rgba) -> Option<u64> {
         .for_each(&mut eat);
     for chunk in img.pixels.chunks(32) {
         let bits = chunk
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .enumerate()
             .fold(0u8, |b, (i, p)| b | (((p[3] > 0) as u8) << i));
         eat(bits);
@@ -82,7 +90,7 @@ pub fn mask_hash(img: &Rgba) -> Option<u64> {
 
 /// Nothing visible at all.
 pub fn is_blank(img: &Rgba) -> bool {
-    img.pixels.chunks_exact(4).all(|p| p[3] == 0)
+    img.pixels.as_chunks::<4>().0.iter().all(|p| p[3] == 0)
 }
 
 /// Decode by content: PNG by its signature, TGA when the name says so.
@@ -249,7 +257,15 @@ pub const LAYOUT_MIN_DRAWN: usize = 256;
 pub fn prove_layout(java: &Rgba, jp: &JavaPixels, bp: &BedrockPixels) -> Option<String> {
     // a small icon's outline can coincide (an attack indicator and the
     // strength effect are both a sword): a layout needs room to be a proof
-    if java.pixels.chunks_exact(4).filter(|p| p[3] > 0).count() < LAYOUT_MIN_DRAWN {
+    if java
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|p| p[3] > 0)
+        .count()
+        < LAYOUT_MIN_DRAWN
+    {
         return None;
     }
     let m = mask_hash(java)?;
@@ -459,7 +475,7 @@ mod tests {
         // a 32x32 picture drawn on its left half: 512 pixels, enough shape
         let shape = |seed: u8| {
             let mut i = img(32, 32, seed);
-            for (n, p) in i.pixels.chunks_exact_mut(4).enumerate() {
+            for (n, p) in i.pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                 if n % 32 >= 16 {
                     p.copy_from_slice(&[0, 0, 0, 0]);
                 }

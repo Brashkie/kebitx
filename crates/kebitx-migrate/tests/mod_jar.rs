@@ -21,7 +21,7 @@ fn put(root: &Path, rel: &str, body: &[u8]) -> PathBuf {
 
 fn opaque(seed: u8) -> Vec<u8> {
     let mut img = Rgba::new(16, 16);
-    for (i, p) in img.pixels.chunks_exact_mut(4).enumerate() {
+    for (i, p) in img.pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         p.copy_from_slice(&[seed, i as u8, 7, 255]);
     }
     png::encode(&img)

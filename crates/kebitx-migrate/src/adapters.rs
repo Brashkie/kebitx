@@ -127,7 +127,7 @@ fn chain_has(path: &str, root: &Path, jar: Option<&JavaJar>, needle: &str) -> bo
 
 fn has_transparency(root: &Path, file: &str) -> bool {
     crate::content::decode_file(&root.join(file))
-        .is_some_and(|img| img.pixels.chunks_exact(4).any(|p| p[3] < 255))
+        .is_some_and(|img| img.pixels.as_chunks::<4>().0.iter().any(|p| p[3] < 255))
 }
 
 /// Adapt the items and blocks of namespace `ns`.

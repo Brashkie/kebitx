@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 /// A picture no other test picture equals: every pixel from `seed`.
 fn pic(w: u32, h: u32, seed: u8) -> Rgba {
     let mut img = Rgba::new(w, h);
-    for (i, p) in img.pixels.chunks_exact_mut(4).enumerate() {
+    for (i, p) in img.pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         p.copy_from_slice(&[
             (i as u8).wrapping_mul(7).wrapping_add(seed),
             seed,
