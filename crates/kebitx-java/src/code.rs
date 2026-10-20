@@ -35,6 +35,23 @@ pub struct GameClass {
     pub methods: HashSet<(String, String)>,
 }
 
+impl GameClass {
+    /// What a class file declares.
+    pub fn of(c: &ClassFile) -> Self {
+        let pairs = |m: &[class::Member]| {
+            m.iter()
+                .map(|m| (m.name.clone(), m.descriptor.clone()))
+                .collect()
+        };
+        GameClass {
+            super_name: c.super_name.clone(),
+            interfaces: c.interfaces.clone(),
+            fields: pairs(&c.fields),
+            methods: pairs(&c.methods),
+        }
+    }
+}
+
 /// Every class of one game version.
 #[derive(Debug, Default)]
 pub struct GameIndex {
@@ -85,19 +102,24 @@ pub enum Found {
 }
 
 impl GameIndex {
-    /// Every class of a game version's `.jar`, read on every core.
+    /// Every class of a game version's `.jar`. The archive is read into
+    /// memory once (tens of ms) so every core reads from it without waiting
+    /// on one file handle; reading, decoding and building each class's sets
+    /// all happen on every core, and only the final inserts run in order.
     pub fn from_jar(jar: &JavaJar) -> Self {
-        let names: Vec<&String> = jar.zip.names().filter(|n| n.ends_with(".class")).collect();
-        let parsed = kebitx_core::par::par_map(&names, |n| {
-            jar.zip
-                .read(n, 16 * 1024 * 1024)
+        let mem = jar.zip.in_memory().ok();
+        let zip = mem.as_ref().unwrap_or(&jar.zip);
+        let names: Vec<&String> = zip.names().filter(|n| n.ends_with(".class")).collect();
+        let built = kebitx_core::par::par_map(&names, |n| {
+            zip.read(n, 16 * 1024 * 1024)
                 .ok()
                 .and_then(|b| class::parse(&b).ok())
+                .map(|c| (c.name.clone(), GameClass::of(&c)))
         });
         let mut index = Self::default();
-        for c in parsed {
+        for c in built {
             match c {
-                Some(c) => index.add(&c),
+                Some((name, gc)) => index.insert(name, gc),
                 None => index.unreadable += 1,
             }
         }
@@ -105,23 +127,14 @@ impl GameIndex {
     }
 
     pub fn add(&mut self, c: &ClassFile) {
-        if let Some(r) = root_of(&c.name) {
+        self.insert(c.name.clone(), GameClass::of(c));
+    }
+
+    fn insert(&mut self, name: String, gc: GameClass) {
+        if let Some(r) = root_of(&name) {
             self.roots.insert(r);
         }
-        let pairs = |m: &[class::Member]| {
-            m.iter()
-                .map(|m| (m.name.clone(), m.descriptor.clone()))
-                .collect()
-        };
-        self.classes.insert(
-            c.name.clone(),
-            GameClass {
-                super_name: c.super_name.clone(),
-                interfaces: c.interfaces.clone(),
-                fields: pairs(&c.fields),
-                methods: pairs(&c.methods),
-            },
-        );
+        self.classes.insert(name, gc);
     }
 
     /// Is this class in one of the game's own packages?
@@ -473,8 +486,26 @@ const ADDS_NOTHING: [&str; 6] = [
 /// Bundled jars nest (a jar in a jar in a jar): this deep is plenty.
 const MAX_NESTING: usize = 3;
 
-/// Every class of the jars bundled in `src`, and the mod ids they provide.
-fn bundled(src: &Source, files: &BTreeSet<String>, depth: usize, out: &mut Bundled) {
+/// Every class file of `src` (multi-release copies under `META-INF/` left
+/// out), read on every core, in order.
+fn parse_all(src: &Source, files: &BTreeSet<String>) -> Vec<(String, Result<ClassFile, String>)> {
+    let names: Vec<&String> = files
+        .iter()
+        .filter(|f| f.ends_with(".class") && !f.starts_with("META-INF/"))
+        .collect();
+    kebitx_core::par::par_map(&names, |f| {
+        let c = src
+            .read(f)
+            .ok_or_else(|| "cannot be read".to_string())
+            .and_then(|b| class::parse(&b));
+        ((*f).clone(), c)
+    })
+}
+
+/// The jars bundled in `src`: how many, their classes (read only when
+/// `classes`: in a set they are already in the context), and the mod ids
+/// they provide.
+fn bundled(src: &Source, files: &BTreeSet<String>, depth: usize, classes: bool, out: &mut Bundled) {
     if depth >= MAX_NESTING {
         return;
     }
@@ -505,21 +536,25 @@ fn bundled(src: &Source, files: &BTreeSet<String>, depth: usize, out: &mut Bundl
             out.ids
                 .extend(id.into_iter().chain(provides).map(str::to_string));
         }
-        for f in inner_files
+        out.class_count += inner_files
             .iter()
             .filter(|f| f.ends_with(".class") && !f.starts_with("META-INF/"))
-        {
-            if let Some(c) = inner.read(f).and_then(|b| class::parse(&b).ok()) {
-                out.classes.push(c);
-            }
+            .count();
+        if classes {
+            out.classes.extend(
+                parse_all(&inner, &inner_files)
+                    .into_iter()
+                    .filter_map(|(_, c)| c.ok()),
+            );
         }
-        bundled(&inner, &inner_files, depth + 1, out);
+        bundled(&inner, &inner_files, depth + 1, classes, out);
     }
 }
 
 #[derive(Default)]
 struct Bundled {
     jars: usize,
+    class_count: usize,
     ids: BTreeSet<String>,
     classes: Vec<ClassFile>,
 }
@@ -531,22 +566,27 @@ struct Bundled {
 pub struct Context {
     pub classes: Vec<ClassFile>,
     pub ids: BTreeSet<String>,
+    /// Each mod added: its first id, and where its own classes (not its
+    /// bundled jars') are in `classes`.
+    pub own: Vec<(String, std::ops::Range<usize>)>,
 }
 
 impl Context {
     /// Adds one mod: its classes, its bundled jars, and `ids` (its own id
     /// and what it provides).
     pub fn add_mod(&mut self, src: &Source, files: &BTreeSet<String>, ids: &[String]) {
-        for f in files
-            .iter()
-            .filter(|f| f.ends_with(".class") && !f.starts_with("META-INF/"))
-        {
-            if let Some(c) = src.read(f).and_then(|b| class::parse(&b).ok()) {
-                self.classes.push(c);
-            }
-        }
+        let start = self.classes.len();
+        self.classes.extend(
+            parse_all(src, files)
+                .into_iter()
+                .filter_map(|(_, c)| c.ok()),
+        );
+        self.own.push((
+            ids.first().cloned().unwrap_or_default(),
+            start..self.classes.len(),
+        ));
         let mut b = Bundled::default();
-        bundled(src, files, 0, &mut b);
+        bundled(src, files, 0, true, &mut b);
         self.classes.extend(b.classes);
         self.ids.extend(b.ids);
         self.ids.extend(ids.iter().cloned());
@@ -599,24 +639,18 @@ pub fn check(
     }
     let mut findings = BTreeSet::new();
     let mut own = Vec::new();
-    for f in &class_files {
-        match src
-            .read(f)
-            .ok_or_else(|| "cannot be read".to_string())
-            .and_then(|b| class::parse(&b))
-        {
+    for (file, c) in parse_all(src, files) {
+        match c {
             Ok(c) => own.push(c),
             Err(why) => {
-                findings.insert(CodeFinding::Unreadable {
-                    file: (*f).clone(),
-                    why,
-                });
+                findings.insert(CodeFinding::Unreadable { file, why });
             }
         }
     }
     let requires = crate::mixin::default_requires(src, files);
     let mut b = Bundled::default();
-    bundled(src, files, 0, &mut b);
+    // in a set, the bundled jars' classes are already in the context
+    bundled(src, files, 0, ctx.classes.is_empty(), &mut b);
 
     let patches_game = matches!(loader, Some("Forge" | "NeoForge"));
     let external: Vec<String> = depends
@@ -630,7 +664,7 @@ pub fn check(
     let mut report = CodeReport {
         classes: class_files.len(),
         nested_jars: b.jars,
-        bundled_classes: b.classes.len(),
+        bundled_classes: b.class_count,
         external: external.clone(),
         ..Default::default()
     };

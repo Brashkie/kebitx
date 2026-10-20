@@ -435,17 +435,25 @@ pub fn analyze_set(dir: &Path, jar: Option<&JavaJar>) -> SetReport {
         .map(|(_, s)| s.as_ref().and_then(meta_of))
         .collect();
 
-    // what loads together: every mod's classes and the ids it provides
-    let mut ctx = Context::default();
-    for ((_, s), m) in sources.iter().zip(&metas) {
-        if let (Some(s), Some(m)) = (s, m) {
-            let mut ids = vec![m.id.clone()];
-            ids.extend(m.provides.iter().cloned());
-            ids.extend(m.bundled.iter().map(|(id, _)| id.clone()));
-            ctx.add_mod(s, &s.files(), &ids);
+    // what loads together (every mod's classes and the ids it provides), and
+    // the game's class index: independent, so built at the same time
+    let (ctx, index) = std::thread::scope(|scope| {
+        let index = scope.spawn(|| jar.map(GameIndex::from_jar));
+        let mut ctx = Context::default();
+        for ((_, s), m) in sources.iter().zip(&metas) {
+            if let (Some(s), Some(m)) = (s, m) {
+                let mut ids = vec![m.id.clone()];
+                ids.extend(m.provides.iter().cloned());
+                ids.extend(m.bundled.iter().map(|(id, _)| id.clone()));
+                ctx.add_mod(s, &s.files(), &ids);
+            }
         }
-    }
-    let index = jar.map(GameIndex::from_jar);
+        // a panic in the index thread is a bug: let it surface as one
+        let index = index
+            .join()
+            .unwrap_or_else(|e| std::panic::resume_unwind(e));
+        (ctx, index)
+    });
 
     let mut findings = BTreeSet::new();
     // id -> (version, jar) of everything the set provides
@@ -537,22 +545,15 @@ pub fn analyze_set(dir: &Path, jar: Option<&JavaJar>) -> SetReport {
         }
     }
 
-    // Mixins of several mods overwriting the same method of the game
+    // Mixins of several mods overwriting the same method of the game (each
+    // mod's own classes, already read for the context)
     let mut overwrites: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
-    for ((_, s), m) in sources.iter().zip(&metas) {
-        let (Some(s), Some(m)) = (s, m) else { continue };
-        for f in s
-            .files()
-            .iter()
-            .filter(|f| f.ends_with(".class") && !f.starts_with("META-INF/"))
-        {
-            let Some(c) = s.read(f).and_then(|b| crate::class::parse(&b).ok()) else {
+    for (mod_id, range) in &ctx.own {
+        for c in &ctx.classes[range.clone()] {
+            let Some(targets) = mixin_targets(c) else {
                 continue;
             };
-            let Some(targets) = mixin_targets(&c) else {
-                continue;
-            };
-            for need in crate::mixin::needs(&c) {
+            for need in crate::mixin::needs(c) {
                 if let crate::mixin::Need::Member {
                     how: "@Overwrite",
                     names,
@@ -564,7 +565,7 @@ pub fn analyze_set(dir: &Path, jar: Option<&JavaJar>) -> SetReport {
                         overwrites
                             .entry((t.replace('/', "."), format!("{}{descriptor}", names[0])))
                             .or_default()
-                            .insert(m.id.clone());
+                            .insert(mod_id.clone());
                     }
                 }
             }

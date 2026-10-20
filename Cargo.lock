@@ -259,14 +259,14 @@ dependencies = [
 
 [[package]]
 name = "kebitx-build"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "kebitx-core",
 ]
 
 [[package]]
 name = "kebitx-cli"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "kebitx-build",
  "kebitx-core",
@@ -277,21 +277,21 @@ dependencies = [
 
 [[package]]
 name = "kebitx-core"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "criterion",
 ]
 
 [[package]]
 name = "kebitx-ffi"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "kebitx-core",
 ]
 
 [[package]]
 name = "kebitx-java"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "kebitx-build",
  "kebitx-core",
@@ -300,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "kebitx-migrate"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "kebitx-build",
  "kebitx-core",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "kebitx-repair"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "kebitx-core",
 ]

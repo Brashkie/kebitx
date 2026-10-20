@@ -797,6 +797,63 @@ cargo bench -p kebitx-core                                # fixtures and a synth
 KEBITX_BENCH_WORLD=<world> cargo bench -p kebitx-core     # the numbers that matter
 ```
 
+### Java Edition: the same method
+
+Measured on the game's own `.jar` (26.3: 11 383 classes, 22.3 MB compressed, 60 MB inflated)
+and the real mods above:
+
+| Step | Before | After |
+|---|---|---|
+| reading the classes from the `.jar` (warm cache, 1 core) | 1.24 s | 0.44 s |
+| DEFLATE + CRC-32 on the same 11 383 streams (1 core) | 701 ms | 334 ms |
+| the game's class index (all cores) | 430 ms | 182 ms |
+| `kebitx analyze` on a mods folder (4 mods) | 2.23 s | 0.64 s |
+| `kebitx analyze` on one mod (Sodium) | 1.07 s | 0.37 s |
+
+Where the time went, and what fixed it:
+
+- **Every entry opened the archive file again:** 11 383 opens for one `.jar`, 9.1 s on a cold
+  cache. Now the file is opened once and shared. Only the seek and read run under its lock;
+  decoding runs outside it, on every core.
+- **DEFLATE decoded Huffman codes one bit at a time** (zlib's reference `puff` method). A
+  10-bit lookup table per code now finds most symbols in one step. Long codes and the end of
+  the stream keep the old path, so errors on hostile input are unchanged. Copies that do not
+  overlap are done in one block.
+- **CRC-32 went byte by byte,** at 493 MB/s. Now it works eight bytes at a time ("slicing by
+  8", tables built at compile time): 2 GB/s, with the same checksums.
+- **A mods folder read each class three times, one core at a time.** Now classes are read once,
+  in parallel. The game's index is built while the mods are read, and the Overwrite check
+  reuses the classes already read.
+- **The game's index queued on one file handle, then built its tables in order.** Now the
+  `.jar` is read into memory once (about 30 ms), and every core reads, decodes and builds the
+  tables of its classes. Only the final inserts run in order: 350 ms → 182 ms.
+
+The reports are identical before and after: the same 3 refusals and 17 failures on the bad set,
+and the same 2982 and 3594 references for Sodium and Lithium.
+
+**Why not Zig, or C?** A native decoder was the obvious candidate, so every option was measured
+on exactly the same input: the 11 383 class files of the 26.3 `.jar`, each inflated to its
+known size and checked against its CRC-32. The benchmarks are `native/zig/bench-inflate` and
+`native/c/bench-inflate`; the C libraries were built with `zig cc -O3`.
+
+| Decoder | Language | Time | Speed |
+|---|---|---|---|
+| `std.compress.flate` | Zig | 728 ms | 82 MB/s |
+| kebitx, before | Rust | 701 ms | 85 MB/s |
+| **kebitx, now** | Rust | **320 ms** | **187 MB/s** |
+| zlib 1.3.2 | C | 230 ms | 260 MB/s |
+| libdeflate 1.26 | C | 100 ms | 597 MB/s |
+
+Zig's decoder brought nothing: the time was in the algorithm, not the language. libdeflate is
+3.2× faster than kebitx's decoder, so the rule asked the next question: how much of a real run
+is decoding? Measured phase by phase, decoding was 52 ms of the game's 350 ms index, because it
+already runs on every core. libdeflate would have saved about 36 ms, for a C toolchain on every
+one of the 7 release targets and an `unsafe` boundary.
+
+The phases that ran in order cost far more, and fixing them in Rust saved 170 ms, so no native
+code was added. Both benchmarks stay in the repository: when decoding becomes the bottleneck
+(more cores, or larger archives), the decision can be measured again.
+
 ## Validated on a real world
 
 29 packs, 13 of them resource packs. Run against the packs *before* any hand fixes, kebitx found
@@ -838,6 +895,15 @@ Zig is **not** automatically faster than Rust or C++. Performance depends on the
 memory layout, libraries and measurements. A module moves to native code only with a benchmark
 in hand — otherwise the project ends up as three duplicated implementations.
 
+That rule has been applied once so far, to DEFLATE decoding in the Java analysis, with Zig,
+zlib and libdeflate measured on the same input:
+
+- Zig's decoder was no faster than kebitx's.
+- libdeflate was 3.2× faster, but decoding was 15 % of the real run, already on every core.
+- Fixing the algorithm and the serial phases in Rust saved more than libdeflate could have.
+
+So no native code was added. See *Performance*.
+
 ### Layout today
 
 ```text
@@ -854,9 +920,12 @@ kebitx/
 │   ├── kebitx-ffi/         # the C ABI (include/kebitx.h); the only crate with `unsafe`
 │   └── kebitx-cli/         # the `kebitx` executable (analyze, build, repair, compare, migrate)
 ├── native/
-│   └── zig/
-│       ├── kebitx-check/   # the C ABI's reference consumer, in Zig
-│       └── cross/          # zig cc as the linker for Linux x86-64 / ARM64 builds
+│   ├── zig/
+│   │   ├── kebitx-check/   # the C ABI's reference consumer, in Zig
+│   │   ├── bench-inflate/  # Zig's DEFLATE decoder measured on kebitx's input
+│   │   └── cross/          # zig cc as the linker for Linux x86-64 / ARM64 builds
+│   └── c/
+│       └── bench-inflate/  # zlib and libdeflate measured on the same input (sources not vendored)
 ├── fixtures/               # synthetic packs and worlds, shared by every crate
 ├── .github/workflows/      # ci.yml (every push and pull request), release.yml (tags)
 ├── CHANGELOG.md

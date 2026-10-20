@@ -425,6 +425,30 @@ change only if the report stays byte-for-byte the same.
   modification time; the installed game's real catalog round-trips through it exactly (a test);
   damaged or foreign files are rejected whole. 233 ms → 12 ms
 - Result on the reference world: 7.6 s → 0.47 s for a full `kebitx analyze`, report unchanged
+- [x] Java Edition, measured on the 26.3 `.jar` (`crates/kebitx-java/tests/profile.rs`):
+  - **The `.jar` file:** opened once per archive, no longer once per entry (9.1 s cold for
+    11 383 entries).
+  - **DEFLATE:** a 10-bit Huffman lookup table and block copies.
+  - **CRC-32:** slicing by 8, 4× faster.
+  - **A mods folder:** classes read once and in parallel, the game's index built at the same
+    time.
+
+  - **The game's index:** the `.jar` read into memory once, and each class's tables built on
+    every core (350 → 182 ms).
+
+  Result: a mods folder 2.23 s → 0.64 s, one mod 1.07 s → 0.37 s, reports unchanged.
+- [x] Native code, decided by measurement, on the same 11 383 streams with CRC checks:
+  - **The decoders:** Zig's `std.compress.flate` 82 MB/s; kebitx 85 → 187 MB/s; zlib (C)
+    260 MB/s; libdeflate (C) 597 MB/s.
+  - **Why no C:** libdeflate would save about 36 ms of the 350 ms index, because decoding
+    already runs on every core. That is not worth a C toolchain on 7 targets. The serial
+    phases, fixed in Rust, saved 170 ms.
+  - **The benchmarks stay:** `native/zig/bench-inflate` and `native/c/bench-inflate`.
+- [ ] Next measured candidates:
+  - the game's class index on disk, as the Bedrock catalog is (≈180 ms per run);
+  - a DEFLATE fast loop (zlib's `inflate_fast`, libdeflate's word-at-a-time copies), in Rust,
+    to close the gap with zlib;
+  - libdeflate behind an optional feature, if decoding ever becomes most of a run.
 
 ## Security — hardening against hostile input
 

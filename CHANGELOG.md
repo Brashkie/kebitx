@@ -7,6 +7,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-19
+
+Performance, decided by measurement. The Java analysis is about 3× faster, with identical
+reports. Zig's and C's DEFLATE decoders (zlib, libdeflate) were measured on the same input
+before choosing where to optimize, and the benchmarks stay in the repository.
+
+### Changed
+
+- **Faster Java analysis, with the same reports.** A mods folder is analysed in 2.23 s → 0.64 s,
+  one mod in 1.07 s → 0.37 s.
+  - **Game index:** the `.jar` is read into memory once and every core builds its classes'
+    tables: 350 → 182 ms.
+  - **ZIP reading:** a `.jar` is opened once instead of once per entry.
+  - **DEFLATE:** decodes Huffman codes through a 10-bit lookup table, about 2× faster.
+  - **CRC-32:** computes eight bytes at a time, 4× faster.
+  - **Mods folder:** classes are read once and in parallel, and the game's index is built at
+    the same time.
+
+### Added
+
+- **`native/zig/bench-inflate` and `native/c/bench-inflate`:** Zig's decoder, zlib and
+  libdeflate measured on the same input as kebitx's (82, 260 and 597 MB/s; kebitx 85 → 187).
+  - **Zig** brought nothing.
+  - **libdeflate** would save about 36 ms of a 350 ms index, so no native code was added. The
+    serial phases, fixed in Rust, saved 170 ms.
+- **`ZipArchive::in_memory`:** an archive read whole, for reading most of it on every core.
+- **`crates/kebitx-java/tests/profile.rs`:** the time per stage on the installed game and on a
+  mods folder (ignored tests, run on demand).
+- **`ZipArchive::read_raw`:** an entry's stored bytes.
+
 ## [2.1.0] - 2026-10-19
 
 Java Edition becomes a target of its own (Phase 7, Level 1 complete). Kebitx analyses Java
@@ -206,6 +236,7 @@ packs and mods to Bedrock. It is written in Rust with the standard library only.
 - Java shaders have no general Bedrock equivalent.
 - The tests were run on Windows by the author. Linux and macOS are covered by CI.
 
-[Unreleased]: https://github.com/Brashkie/kebitx/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/Brashkie/kebitx/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/Brashkie/kebitx/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Brashkie/kebitx/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Brashkie/kebitx/releases/tag/v2.0.0

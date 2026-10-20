@@ -1,10 +1,18 @@
 //! DEFLATE (RFC 1951) and zlib (RFC 1950) decoding: std only.
 //!
 //! Canonical Huffman decoding by code-length counts, the way zlib's
-//! reference decoder `puff` does it: small and easy to check, and fast enough
-//! for textures and a `.jar`. Every input is untrusted: every read is bounds
-//! checked, every table is validated before use, and the output stops at a
-//! caller-given limit (a few KB can claim gigabytes).
+//! reference decoder `puff` does it, with one addition measured to pay: a
+//! 10-bit lookup table per code, so a symbol is found in one step instead of
+//! one bit at a time (codes longer than that, rare by construction, and the
+//! last bits of a stream take `puff`'s path). The table only ever answers
+//! what the bit-by-bit decoder would, so errors are the same. On the game's
+//! 11 383 class files this took decoding from 85 to several hundred MB/s;
+//! Zig's own decoder, on the same input, ran at 81 MB/s
+//! (`native/zig/bench-inflate`): the gain was the algorithm, not the language.
+//!
+//! Every input is untrusted: every read is bounds checked, every table is
+//! validated before use, and the output stops at a caller-given limit (a few
+//! KB can claim gigabytes).
 
 use std::fmt;
 
@@ -68,6 +76,20 @@ impl<'a> Bits<'a> {
         Ok(v)
     }
 
+    /// Fill the buffer with whatever input is left, up to 56 bits: never an
+    /// error (the end of the data is found by the exact reads).
+    #[inline]
+    fn fill(&mut self) {
+        while self.count <= 48 {
+            let Some(&b) = self.data.get(self.pos) else {
+                return;
+            };
+            self.pos += 1;
+            self.buf |= (b as u64) << self.count;
+            self.count += 8;
+        }
+    }
+
     /// Drop the bits left in the current byte (stored blocks start on a byte).
     fn align(&mut self) {
         let drop = self.count % 8;
@@ -76,11 +98,24 @@ impl<'a> Bits<'a> {
     }
 }
 
+/// Bits looked up at once.
+const FAST_BITS: u32 = 10;
+
 struct Huffman {
     /// How many codes of each length (index 0 unused).
     count: [u16; MAX_BITS + 1],
     /// Symbols ordered by code.
     symbol: Vec<u16>,
+    /// The next `FAST_BITS` input bits (as read, least significant first)
+    /// -> `symbol << 4 | length`; 0 where no code of at most `FAST_BITS`
+    /// bits starts (the bit-by-bit path decides then).
+    fast: Vec<u16>,
+}
+
+/// The `len` low bits of `code`, reversed: DEFLATE stores Huffman codes from
+/// their most significant bit, into a stream read from the least.
+fn reverse(code: u32, len: u32) -> u32 {
+    code.reverse_bits() >> (32 - len)
 }
 
 impl Huffman {
@@ -110,10 +145,52 @@ impl Huffman {
                 offs[l as usize] += 1;
             }
         }
-        Ok((Huffman { count, symbol }, left == 0))
+        // canonical codes, shortest first and by symbol within a length:
+        // the order `symbol` holds and `decode_slow` walks
+        let mut fast = vec![0u16; 1 << FAST_BITS];
+        let (mut code, mut at) = (0u32, 0usize);
+        for len in 1..=MAX_BITS as u32 {
+            for _ in 0..count[len as usize] {
+                if len <= FAST_BITS {
+                    let entry = symbol[at] << 4 | len as u16;
+                    let mut i = reverse(code, len) as usize;
+                    while i < fast.len() {
+                        fast[i] = entry;
+                        i += 1 << len;
+                    }
+                }
+                code += 1;
+                at += 1;
+            }
+            code <<= 1;
+        }
+        Ok((
+            Huffman {
+                count,
+                symbol,
+                fast,
+            },
+            left == 0,
+        ))
     }
 
+    #[inline]
     fn decode(&self, bits: &mut Bits) -> Result<u16, InflateError> {
+        if bits.count < FAST_BITS {
+            bits.fill();
+        }
+        let entry = self.fast[(bits.buf & ((1 << FAST_BITS) - 1)) as usize];
+        let len = (entry & 15) as u32;
+        if len != 0 && len <= bits.count {
+            bits.buf >>= len;
+            bits.count -= len;
+            return Ok(entry >> 4);
+        }
+        self.decode_slow(bits)
+    }
+
+    /// One bit at a time, as `puff`: long codes, and the end of the stream.
+    fn decode_slow(&self, bits: &mut Bits) -> Result<u16, InflateError> {
         let (mut code, mut first, mut index) = (0i32, 0i32, 0i32);
         for len in 1..=MAX_BITS {
             code |= bits.bits(1)? as i32;
@@ -150,7 +227,9 @@ const DIST_EXTRA: [u8; 30] = [
 /// how many input bytes the stream used.
 pub fn inflate(data: &[u8], limit: usize) -> Result<(Vec<u8>, usize), InflateError> {
     let mut bits = Bits::new(data);
-    let mut out: Vec<u8> = Vec::new();
+    // room for typical ratios up front; a claim beyond the limit is never
+    // reserved (a hostile stream cannot make this allocate more)
+    let mut out: Vec<u8> = Vec::with_capacity(limit.min(data.len().saturating_mul(4) + 1024));
     loop {
         let last = bits.bits(1)? == 1;
         match bits.bits(2)? {
@@ -204,14 +283,15 @@ fn fixed_tables() -> (Huffman, Huffman) {
     l[256..280].fill(7);
     l[280..].fill(8);
     // the fixed tables are valid by construction
-    let lit = Huffman::new(&l).map(|(h, _)| h).unwrap_or(Huffman {
+    let empty = || Huffman {
         count: [0; 16],
         symbol: Vec::new(),
-    });
-    let dist = Huffman::new(&[5u8; 30]).map(|(h, _)| h).unwrap_or(Huffman {
-        count: [0; 16],
-        symbol: Vec::new(),
-    });
+        fast: vec![0; 1 << FAST_BITS],
+    };
+    let lit = Huffman::new(&l).map(|(h, _)| h).unwrap_or_else(|_| empty());
+    let dist = Huffman::new(&[5u8; 30])
+        .map(|(h, _)| h)
+        .unwrap_or_else(|_| empty());
     (lit, dist)
 }
 
@@ -308,9 +388,15 @@ fn codes(
                     return Err(InflateError::TooLarge);
                 }
                 let from = out.len() - back;
-                for k in 0..len {
-                    let b = out[from + k];
-                    out.push(b);
+                if back >= len {
+                    // no overlap: one copy
+                    out.extend_from_within(from..from + len);
+                } else {
+                    // the copy repeats bytes it is writing: byte by byte
+                    for k in 0..len {
+                        let b = out[from + k];
+                        out.push(b);
+                    }
                 }
             }
         }

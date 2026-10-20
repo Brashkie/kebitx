@@ -6,8 +6,8 @@ use super::{crc32, inflate};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 struct EntryInfo {
@@ -18,15 +18,14 @@ struct EntryInfo {
     local_offset: u64,
 }
 
-/// Where the archive's bytes are: a file, read on demand, or memory (a
-/// `.jar` inside a `.jar`, never written to disk).
+/// Where the archive's bytes are: a file, opened once and read on demand
+/// (opening it again for each entry cost more than reading: 11 383 opens for
+/// a game `.jar`), or memory (a `.jar` inside a `.jar`, never written to
+/// disk).
 enum Backing {
-    File(PathBuf),
+    File(Mutex<File>),
     Memory(Arc<[u8]>),
 }
-
-trait ReadSeek: Read + Seek {}
-impl<T: Read + Seek> ReadSeek for T {}
 
 pub struct ZipArchive {
     backing: Backing,
@@ -42,26 +41,30 @@ fn le32(b: &[u8], i: usize) -> u32 {
 
 impl ZipArchive {
     pub fn open(path: &Path) -> Result<Self, String> {
-        let f = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut f = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let len = f.metadata().map_err(|e| e.to_string())?.len();
-        Self::directory(f, len, Backing::File(path.to_path_buf()))
+        let entries = Self::directory(&mut f, len)?;
+        Ok(Self {
+            backing: Backing::File(Mutex::new(f)),
+            entries,
+        })
     }
 
     /// An archive held in memory: a `.jar` bundled inside another one.
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, String> {
         let data: Arc<[u8]> = bytes.into();
         let len = data.len() as u64;
-        Self::directory(Cursor::new(data.clone()), len, Backing::Memory(data))
-    }
-
-    fn reader(&self) -> Result<Box<dyn ReadSeek + '_>, String> {
-        Ok(match &self.backing {
-            Backing::File(p) => Box::new(File::open(p).map_err(|e| e.to_string())?),
-            Backing::Memory(d) => Box::new(Cursor::new(&d[..])),
+        let entries = Self::directory(&mut Cursor::new(&data[..]), len)?;
+        Ok(Self {
+            backing: Backing::Memory(data),
+            entries,
         })
     }
 
-    fn directory<R: Read + Seek>(mut f: R, len: u64, backing: Backing) -> Result<Self, String> {
+    fn directory<R: Read + Seek>(
+        f: &mut R,
+        len: u64,
+    ) -> Result<HashMap<String, EntryInfo>, String> {
         // the end record is in the last 22 + 65535 bytes (comment included)
         let tail_len = len.min(22 + 65535);
         f.seek(SeekFrom::Start(len - tail_len))
@@ -113,7 +116,7 @@ impl ZipArchive {
             }
             i += 46 + name_len + extra_len + comment_len;
         }
-        Ok(ZipArchive { backing, entries })
+        Ok(entries)
     }
 
     pub fn names(&self) -> impl Iterator<Item = &String> {
@@ -133,24 +136,7 @@ impl ZipArchive {
         if e.size > limit {
             return Err(format!("{name}: larger than allowed"));
         }
-        let mut f = self.reader()?;
-        f.seek(SeekFrom::Start(e.local_offset))
-            .map_err(|e| e.to_string())?;
-        let mut head = [0u8; 30];
-        f.read_exact(&mut head).map_err(|e| e.to_string())?;
-        if le32(&head, 0) != 0x0403_4b50 {
-            return Err(format!("{name}: bad local header"));
-        }
-        let skip = le16(&head, 26) as i64 + le16(&head, 28) as i64;
-        f.seek(SeekFrom::Current(skip)).map_err(|e| e.to_string())?;
-        let mut packed = vec![
-            0u8;
-            e.compressed
-                .min(limit.saturating_mul(1032).saturating_add(1024))
-                as usize
-        ];
-        f.read_exact(&mut packed)
-            .map_err(|err| format!("{name}: {err}"))?;
+        let packed = self.stored(name, e, limit)?;
         let data = match e.method {
             0 => packed,
             8 => {
@@ -164,5 +150,80 @@ impl ZipArchive {
             return Err(format!("{name}: size or CRC mismatch"));
         }
         Ok(data)
+    }
+
+    /// The same archive, held in memory: for reading most of a large archive
+    /// on every core, where one shared file handle would make them queue.
+    pub fn in_memory(&self) -> Result<ZipArchive, String> {
+        let data = match &self.backing {
+            Backing::Memory(d) => d.clone(),
+            Backing::File(file) => {
+                let mut f = file
+                    .lock()
+                    .map_err(|_| "the archive's file lock is poisoned".to_string())?;
+                f.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+                let mut all = Vec::new();
+                f.read_to_end(&mut all).map_err(|e| e.to_string())?;
+                all.into()
+            }
+        };
+        Ok(ZipArchive {
+            backing: Backing::Memory(data),
+            entries: self.entries.clone(),
+        })
+    }
+
+    /// An entry as stored: `(method, uncompressed size, CRC-32, bytes)`
+    /// (method 8 is raw DEFLATE). For tools that decode it another way, and
+    /// for measuring decoders on the same input.
+    pub fn read_raw(&self, name: &str, limit: u64) -> Result<(u16, u64, u32, Vec<u8>), String> {
+        let e = self
+            .entries
+            .get(name)
+            .ok_or_else(|| format!("{name}: not in the archive"))?;
+        if e.size > limit {
+            return Err(format!("{name}: larger than allowed"));
+        }
+        Ok((e.method, e.size, e.crc, self.stored(name, e, limit)?))
+    }
+
+    /// The stored (compressed) bytes of an entry. A file is opened once per
+    /// archive and shared: only the seek and read happen under its lock,
+    /// decoding happens outside, on every core.
+    fn stored(&self, name: &str, e: &EntryInfo, limit: u64) -> Result<Vec<u8>, String> {
+        fn take<R: Read + Seek>(
+            f: &mut R,
+            name: &str,
+            e: &EntryInfo,
+            limit: u64,
+        ) -> Result<Vec<u8>, String> {
+            f.seek(SeekFrom::Start(e.local_offset))
+                .map_err(|e| e.to_string())?;
+            let mut head = [0u8; 30];
+            f.read_exact(&mut head).map_err(|e| e.to_string())?;
+            if le32(&head, 0) != 0x0403_4b50 {
+                return Err(format!("{name}: bad local header"));
+            }
+            let skip = le16(&head, 26) as i64 + le16(&head, 28) as i64;
+            f.seek(SeekFrom::Current(skip)).map_err(|e| e.to_string())?;
+            let mut packed = vec![
+                0u8;
+                e.compressed
+                    .min(limit.saturating_mul(1032).saturating_add(1024))
+                    as usize
+            ];
+            f.read_exact(&mut packed)
+                .map_err(|err| format!("{name}: {err}"))?;
+            Ok(packed)
+        }
+        match &self.backing {
+            Backing::File(file) => {
+                let mut f = file
+                    .lock()
+                    .map_err(|_| format!("{name}: the archive's file lock is poisoned"))?;
+                take(&mut *f, name, e, limit)
+            }
+            Backing::Memory(d) => take(&mut Cursor::new(&d[..]), name, e, limit),
+        }
     }
 }
