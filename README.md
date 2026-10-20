@@ -108,8 +108,11 @@ verdict that needs the game says so instead of guessing.
 | Command | What it does | Exit code |
 |---|---|---|
 | `kebitx analyze <pack or world> [--all] [--timings]` | Resolves every reference and checks compatibility, graphics, unused and duplicate content | 0 clean, 1 problems |
+| `kebitx analyze <Java pack or mod: folder, .jar, .zip> [--all] [--game <version>]` | Java Edition: assets, and a mod's code and Mixins, checked against the installed game | 0 clean, 1 problems |
+| `kebitx analyze <mods folder> [--all] [--game <version>]` | Every mod of the folder against the game and each other, and what the loader refuses (duplicates, dependencies, versions, `breaks`) | 0 clean, 1 problems |
 | `kebitx repair <world> [--fix case,unused] [--apply]` | Safe repairs: preview, backup, surgical edits, second analysis, automatic rollback | 0 done, 1 rolled back |
-| `kebitx repair --undo <backup>` | Puts a backup back | |
+| `kebitx repair <mods folder> [--fix duplicates,incompatible] [--apply]` | Java: takes duplicate or incompatible mods out of the folder, verified the same way | 0 done, 1 rolled back |
+| `kebitx repair --undo <backup>` | Puts a backup back (Bedrock or Java) | |
 | `kebitx compare <before> <after> [--all]` | What is new, fixed, lost or removed between two versions | 0 OK, 1 regression |
 | `kebitx build [project] [--target …] [--watch]` | Builds an add-on through filters, gated by the analysis | 0 built, 1 failed |
 | `kebitx migrate <java pack, .jar or .zip> [--out <dir>] [--all]` | Java → Bedrock: report, then convert what is proven | 0 clean result |
@@ -130,7 +133,7 @@ The long-term goal is a tool that goes from **detecting** problems to **diagnosi
 | **Repair & compatibility** | Duplicate identifiers, manifests, `min_engine_version` against the installed game, dependencies between resource and behavior packs, files the game does not merge |
 | **Optimization** | Oversized textures, duplicated assets, redundant geometry, costly animations — with mobile devices as the reference target |
 | **Java → Bedrock migration** | Convert what can be converted, flag what cannot, and produce a task list for what needs rebuilding. Whole worlds stay with Chunker; kebitx checks what it produces |
-| **Java Edition (planned, Phase 7)** | Analyse Java packs and mods for their own sake: broken models and textures, mod bytecode checked against the installed game, loader dependencies, profiles (JFR, spark) attributed to mods. A runtime of its own with a JIT is research with conditions, not a plan |
+| **Java Edition (Phase 7, started)** | Analyse Java packs and mods for their own sake: broken models and textures (working today), mod bytecode checked against the installed game, loader dependencies, profiles (JFR, spark) attributed to mods. A runtime of its own with a JIT is research with conditions, not a plan |
 | **Building** | `kebitx build`: filters over a scratch copy, the analysis as a gate, export to the game's development folders or to `.mcpack` / `.mcaddon` |
 
 The identity does not change along the way: **explain why something looks broken, never modify it
@@ -276,6 +279,193 @@ what a build writes never triggers another. A filter is any program: it runs in 
 in `KEBITX_BP` / `KEBITX_RP`, and exits with 0 on success (`crates/kebitx-build/src/bin/filter_example.rs`
 is a complete one). An export only replaces folders a build created; anything else at the
 target is refused, never deleted.
+
+### Analysing a Java resource pack or mod
+
+```bash
+kebitx analyze "Faithful 32x - 26.3.zip"           # a resource pack, folder or .zip
+kebitx analyze FarmersDelight-1.21.1-1.3.4.jar     # a Fabric, Quilt, Forge or NeoForge mod
+```
+
+Archives are read in place, never extracted. Every verdict is proven against the pack and the
+installed Java game's `.jar`. The version is the one whose format the pack declares
+(`pack_format`, `supported_formats`, or `min_format` to `max_format`), else the newest stable
+one, and the report says which. Kebitx checks:
+
+| Broken (exit 1) | Why the game fails |
+|---|---|
+| a model whose `parent` does not exist | the model cannot load |
+| a texture a model names that does not exist | the missing texture shows |
+| a blockstate or item definition naming a missing model | the missing model shows |
+| a face asking for `#variable` that its chain never sets (in a model a blockstate or item uses) | the missing texture shows |
+| an animated texture whose image does not divide into its frames | the game refuses the sprite |
+| a `.png` that is not a PNG | the game checks the signature (`PngInfo.validateHeader`: "Bad PNG Signature") |
+
+Two checks are information only. A language that lacks keys `en_us` has is one, because the
+game falls back to English. A replacement texture in other proportions than the game's is the
+other: a uniform HD scale keeps the proportions, and animated strips are not compared.
+
+What can be proven depends on the namespace:
+
+- **`minecraft`** is checked against the pack and the game's `.jar`.
+- **A mod's own namespace (its id)** is checked against the mod, which ships all of it.
+- **Any other namespace** belongs to another mod and cannot be proven from here. Those
+  references are counted as unchecked and never reported.
+
+Sprites that the atlases generate without a file of their own name count as existing: armour
+trim permutations, renamed `single` sprites and `unstitch` regions.
+
+The test that keeps it honest is the game's own assets, analysed as a pack: Java 26.2 (20 873
+references) and 26.3 (23 517 references) both give no finding at all.
+
+On real content:
+
+- **Faithful 32x for 26.3** (3953 textures) is analysed in 0.17 s. Nothing is broken, and one
+  texture is reported as information: `particle/noxious_gas_08.png` is 32×30 while its seven
+  sibling frames are 32×32.
+- **Farmer's Delight** (NeoForge, declares Minecraft `[1.21.1]`) has 1591 references checked
+  and 0 broken.
+
+**A mod's code.** Kebitx reads class files itself (std only, hostile input is an error,
+never a panic) and checks a mod's code against the game version. A failure here crashes the
+game: `NoSuchMethodError` when the line runs, or a failed Mixin at start-up. It checks:
+
+- every class, field and method of the game that the mod names;
+- every `@Mixin` target.
+
+Since 26.x, Java's `.jar` is not obfuscated, so the names a mod is compiled against are the
+names in the `.jar`. A mod built for an obfuscated version names Fabric's intermediary classes
+(`class_1234`); Kebitx says so and compares nothing.
+
+```bash
+kebitx analyze lithium-fabric-0.25.3+mc26.2.jar               # against 26.2, the version it names
+kebitx analyze lithium-fabric-0.25.3+mc26.2.jar --game 26.3   # would it run on 26.3?
+```
+
+The version is the one the mod names, when it names exactly one that is installed (`~26.2`,
+`26.3.x`, `[1.21.1]`). Otherwise it is the newest stable one, or the one you choose with
+`--game`.
+
+Members are looked up as the JVM does: the class, then its superclasses and interfaces.
+Something is reported missing only when every class on the way is known.
+
+- **Known classes:**
+  - the game's own classes;
+  - `java/lang/Object`;
+  - the mod's classes;
+  - the classes of the jars it bundles (`META-INF/jars/`, read in memory).
+- **What Mixins add:** a Mixin's interfaces and its own members are merged into the game class
+  it targets. That is how Fabric API gives `BlockStateModel` its `emitQuads`, so a mod that
+  calls it is not reported.
+- **Never claimed:**
+  - **A chain through another JDK or library class** is counted as unchecked.
+  - **A mod that runs with something that can change the game's classes.** What is not in the
+    game's `.jar` is listed as information, with where it may come from. This applies to:
+    - Forge and NeoForge, which patch the game;
+    - a dependency the mod does not bundle.
+
+The proofs:
+
+| Test | Result |
+|---|---|
+| the game's code against itself | 26.2: 10 952 classes, 340 963 references; 26.3: 11 383 classes, 350 837 references; all resolve |
+| Lithium for 26.3, on 26.3 | 696 classes, 291 Mixins, 2715 references: nothing missing |
+| Sodium for 26.3, on 26.3 (9 bundled Fabric API jars) | 2763 references: nothing missing |
+| Lithium for 26.2, on 26.2 | 2728 references: nothing missing |
+| **Lithium for 26.2, on 26.3** | **6 failures, each confirmed in the two `.jar`s** |
+
+**What a Mixin needs of its target** is read from its annotations. Each kind fails in its own
+way when the game changes:
+
+| Annotation | Must exist in the target | When it does not |
+|---|---|---|
+| `@Shadow`, `@Overwrite` | the member, with the `shadow$` prefix and aliases taken into account | Mixin refuses the class at start-up |
+| `@Accessor("x")`, `@Invoker("y")` | the field or method (only explicit names are checked) | Mixin refuses the class |
+| `@Inject`, `@Redirect`, `@ModifyArg`, ..., MixinExtras' `@WrapOperation`, ... | the method it goes into: the target's own, or one another Mixin adds, never an inherited one | it matches nothing |
+| their `@At(target = ...)` | the call or field it hooks | it matches nothing |
+
+When an injector matches nothing, the outcome depends on `require`, read from the annotation or
+else the config's `injectors.defaultRequire`. With 1 or more, the game does not start (broken).
+With 0, the injection silently does nothing (information). Selectors with wildcards or
+quantifiers are not judged.
+
+With these checks, Lithium for 26.2 on 26.3 gives **17 failures**. Here is a sample, confirmed
+with `javap` (the JDK's own disassembler, run from the launcher's Java 25):
+
+| Mixin needs | 26.2 | 26.3 |
+|---|---|---|
+| `@Shadow LivingEntity.swinging`, `swingTime`; `@Inject updateSwingTime()` | there | gone (a `SwingState` now) |
+| `@Shadow MobSpawnSettings.spawners` | there | gone |
+| `@Redirect` into `ServerChunkCache.tickChunks(ProfilerFiller, long)` | there | now `tickChunks(ProfilerFiller)` |
+| `@Inject` into `BrewingStandBlockEntity.serverTick(Level, ...)` | there | now takes a `ServerLevel` |
+
+Lithium and Sodium for 26.3, on 26.3, still give nothing broken (Lithium: 3594 references and
+Mixin needs). Sodium has one injection that matches nothing in 26.3 and carries `require = 0`
+on purpose; it is reported as information.
+
+**A whole `mods/` folder.** Point `kebitx analyze` at a folder of `.jar` files and it is
+analysed the way the loader sees it.
+
+- **The game version:** the installed version every mod accepts, else the newest stable one, or
+  the one you choose with `--game`.
+- **Each mod:** its assets and its code, analysed against the game and the other mods. A
+  dependency another mod of the folder provides is then proven too: its classes and its Mixins
+  count.
+- **What the loaders refuse to start with:**
+  - the same mod id in two jars;
+  - a required dependency nothing provides (jars bundled inside a mod count, as the loader loads
+    them);
+  - a dependency, `minecraft` included, in a version the requirement does not accept;
+  - a mod another declares it breaks (Fabric `breaks`, NeoForge `incompatible`).
+
+  Requirements are read as each loader reads them: Fabric's predicates (`~26.3-`, `>=0.19.2`,
+  `26.3.x`, `^1.2`) and Maven ranges for Forge and NeoForge (`[1.21.1]`, `[1.0,2.0)`). The
+  loaders' own versions and Java's are not in the folder and are not judged.
+- **Information:**
+  - two mods' Mixins that `@Overwrite` the same method, where only one change survives;
+  - mods for several loaders in one folder;
+  - jars with no mod metadata.
+
+On real mods for 26.3:
+
+- **Fabric API, Lithium, Mod Menu and Sodium:** nothing broken, in 2.2 s. Mod Menu needs four
+  Fabric API modules and bundles them itself.
+- **Two Lithiums, Sodium, Mod Menu and Farmer's Delight:** three refusals:
+  - `lithium` in two jars;
+  - Lithium 0.25.3 needs `minecraft ~26.2`;
+  - Farmer's Delight needs `[1.21.1]`.
+
+  It also reports Lithium 0.25.3's 17 code failures, and that Fabric and NeoForge mods are mixed.
+
+**Repairing a mods folder.** The rules are the same as for Bedrock:
+- a preview first;
+- a backup next to the folder, never inside it, where a jar would load;
+- a second analysis that keeps the result only if it is strictly better. Every problem left
+  must have been there before, and at least one must be gone.
+
+```bash
+kebitx repair <mods folder>                           # preview
+kebitx repair <mods folder> --apply                   # duplicates (the default)
+kebitx repair <mods folder> --fix incompatible --apply
+kebitx repair --undo "<mods folder>.kebitx-backups/<id>"
+```
+
+| Fix | What it does |
+|---|---|
+| `duplicates` (default) | of two jars with the same mod id, keeps the highest version the game accepts and takes the others out; when that cannot be decided (versions that do not read, a tie), nothing is proposed |
+| `incompatible` | takes out mods whose `minecraft` requirement rejects the game's version |
+
+Taking out a mod another one needs makes things worse, so it is undone on its own.
+
+On a copy of the bad set above:
+1. `duplicates` took out Lithium 0.25.3: 20 problems → 1.
+2. `incompatible` took out Farmer's Delight: 1 → 0, and the folder then analyses clean.
+3. `--undo` brought both jars back, byte for byte.
+
+The last row of the first table shows what changed between 26.2 and 26.3. `RedStoneWireBlock` is now
+`RedstoneWireBlock` (two Mixin targets and a constructor), and
+`AbortableIterationConsumer$Continuation` and `FuelValues` are gone. That is why Lithium shipped
+a release for 26.3.
 
 ### Comparing two versions
 
@@ -528,7 +718,7 @@ Of the 1991 Java sound events, 633 are proven to be Bedrock events; of the 8559 
 only): every entry of the 26.3 `.jar` is read with its CRC-32 checked and every PNG decoded, as
 a test.
 
-`cargo test --workspace` shows 150 green (plus the Zig consumer's own `zig build test`), among them the core's fixture tests, the repair tests, the migration tests and the builder's
+`cargo test --workspace` shows 172 green (plus the Zig consumer's own `zig build test`), among them the core's fixture tests, the repair tests, the migration tests and the builder's
 end-to-end tests (a real filter program, every export target, the safety rule). Fixture tests use an **empty** vanilla
 catalog, or a fake install built from `fixtures/fake_install`, so their verdict does not
 depend on which Minecraft is installed on the machine. That is also why `horse_pack_broken` is
@@ -660,6 +850,7 @@ kebitx/
 │   ├── kebitx-build/       # the builder: project file, filters, gate, export, ZIP writer
 │   ├── kebitx-repair/      # repairs: plan, backup, surgical edits, second analysis, rollback
 │   ├── kebitx-migrate/     # Java → Bedrock: report, textures, sounds, models, data, mods
+│   ├── kebitx-java/        # Java Edition: the installed game, analysis of packs and mods
 │   ├── kebitx-ffi/         # the C ABI (include/kebitx.h); the only crate with `unsafe`
 │   └── kebitx-cli/         # the `kebitx` executable (analyze, build, repair, compare, migrate)
 ├── native/
@@ -707,7 +898,8 @@ Every folder appears when it has code in it, never empty in advance.
 | Security track | `fuzz/`: cargo-fuzz targets for the JSON and `.brarchive` readers |
 | Phase 2 | `kebitx-models`: geometry, UVs, bones, texture space |
 | Phase 3 | `kebitx-repair`: safe, verifiable repairs (done: case, unused) |
-| Phase 4 | `kebitx-migrate`: Java → Bedrock (started: report, textures, pixels, flipbooks, sounds, languages) |
+| Phase 4 | `kebitx-migrate`: Java → Bedrock (done: report, textures, pixels, flipbooks, sounds, languages, models, data, mods) |
+| Phase 7 | `kebitx-java`: Java Edition as a target (started: the installed game, analysis of packs and mods) |
 | Phase 6 | `kebitx-ffi`: the C ABI, the only crate where `unsafe` may exist; `native/zig/` as its first consumer (done) |
 | A benchmark asks for it | `native/zig/…` or `native/cpp/…` for that one hot path |
 

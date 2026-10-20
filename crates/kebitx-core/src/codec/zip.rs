@@ -5,8 +5,9 @@
 use super::{crc32, inflate};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 struct EntryInfo {
@@ -17,8 +18,18 @@ struct EntryInfo {
     local_offset: u64,
 }
 
+/// Where the archive's bytes are: a file, read on demand, or memory (a
+/// `.jar` inside a `.jar`, never written to disk).
+enum Backing {
+    File(PathBuf),
+    Memory(Arc<[u8]>),
+}
+
+trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
+
 pub struct ZipArchive {
-    path: PathBuf,
+    backing: Backing,
     entries: HashMap<String, EntryInfo>,
 }
 
@@ -31,8 +42,26 @@ fn le32(b: &[u8], i: usize) -> u32 {
 
 impl ZipArchive {
     pub fn open(path: &Path) -> Result<Self, String> {
-        let mut f = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let f = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let len = f.metadata().map_err(|e| e.to_string())?.len();
+        Self::directory(f, len, Backing::File(path.to_path_buf()))
+    }
+
+    /// An archive held in memory: a `.jar` bundled inside another one.
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, String> {
+        let data: Arc<[u8]> = bytes.into();
+        let len = data.len() as u64;
+        Self::directory(Cursor::new(data.clone()), len, Backing::Memory(data))
+    }
+
+    fn reader(&self) -> Result<Box<dyn ReadSeek + '_>, String> {
+        Ok(match &self.backing {
+            Backing::File(p) => Box::new(File::open(p).map_err(|e| e.to_string())?),
+            Backing::Memory(d) => Box::new(Cursor::new(&d[..])),
+        })
+    }
+
+    fn directory<R: Read + Seek>(mut f: R, len: u64, backing: Backing) -> Result<Self, String> {
         // the end record is in the last 22 + 65535 bytes (comment included)
         let tail_len = len.min(22 + 65535);
         f.seek(SeekFrom::Start(len - tail_len))
@@ -84,10 +113,7 @@ impl ZipArchive {
             }
             i += 46 + name_len + extra_len + comment_len;
         }
-        Ok(ZipArchive {
-            path: path.to_path_buf(),
-            entries,
-        })
+        Ok(ZipArchive { backing, entries })
     }
 
     pub fn names(&self) -> impl Iterator<Item = &String> {
@@ -107,7 +133,7 @@ impl ZipArchive {
         if e.size > limit {
             return Err(format!("{name}: larger than allowed"));
         }
-        let mut f = File::open(&self.path).map_err(|e| e.to_string())?;
+        let mut f = self.reader()?;
         f.seek(SeekFrom::Start(e.local_offset))
             .map_err(|e| e.to_string())?;
         let mut head = [0u8; 30];

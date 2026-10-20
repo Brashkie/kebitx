@@ -14,3 +14,4 @@ kebitx-core.workspace = true
 kebitx-build.workspace = true
 kebitx-repair.workspace = true
 kebitx-migrate.workspace = true
+kebitx-java.workspace = true

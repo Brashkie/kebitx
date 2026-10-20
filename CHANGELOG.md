@@ -7,6 +7,80 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-19
+
+Java Edition becomes a target of its own (Phase 7, Level 1 complete). Kebitx analyses Java
+resource packs, mods and whole `mods/` folders against the installed game, including each mod's
+code and Mixins, and repairs a mods folder with the same guarantees as Bedrock.
+
+### Added
+
+- **`kebitx analyze` for Java Edition** resource packs and mods (Fabric, Quilt, Forge and
+  NeoForge), from a folder, `.jar` or `.zip` read in place.
+  - **Checked against:** the installed game version whose format the pack declares (format
+    ranges included) or, for a mod, the newest stable version. The report says which version
+    was used and which version the mod declares.
+  - **Broken:**
+    - missing model parents, textures and models;
+    - unbound texture variables in used models;
+    - animations that do not divide into frames;
+    - `.png` files that are not PNGs.
+  - **Information:** missing language keys, and textures in proportions other than the game's.
+  - **What is proven:** only the `minecraft` namespace and a mod's own namespace. Other mods'
+    references are counted as unchecked.
+- **New crate `kebitx-java`** for Phase 7: the installed Java game (moved from
+  `kebitx-migrate`, which now uses it), sources read in place, and the analysis.
+- **The installed game finds the version for a pack's format range** (`min_format` to
+  `max_format`, `supported_formats`).
+- **A mod's code checked against the game:** a class-file reader of its own, written with the
+  standard library only.
+  - **What is checked:** every game class, field and method the mod names, and every `@Mixin`
+    target. Members are looked up as the JVM does. The mod's bundled jars, read in memory, and
+    what Mixins merge into the game's classes count.
+  - **Not claimed:**
+    - Forge and NeoForge patches, and dependencies the mod does not bundle (listed as
+      information);
+    - mods built for obfuscated versions (intermediary names), which are not compared.
+- **What Mixins need of their targets:**
+  - `@Shadow`, `@Overwrite`, `@Accessor` and `@Invoker` members;
+  - the methods injectors go into (Mixin's and MixinExtras');
+  - `@At` targets.
+
+  An injection that matches nothing is broken when it is required (`require`, or the config's
+  `injectors.defaultRequire`), and information otherwise.
+- **`kebitx analyze <mods folder>`:** a whole `mods/` folder, as the loader sees it.
+  - **Per mod:** each one is checked against the game and the others.
+  - **Refusals:** duplicate ids, missing dependencies, wrong versions (`minecraft` included),
+    and declared `breaks` / `incompatible`.
+  - **Information:** `@Overwrite` conflicts and mixed loaders.
+  - **The game:** the installed version every mod accepts is chosen.
+- **`kebitx repair <mods folder>`:** `--fix duplicates` (the default) and `incompatible`.
+  - **How it works:** it takes jars out of the folder with a backup, analyses again, and keeps
+    the result only if it is strictly better.
+  - **Undo:** `kebitx repair --undo` restores Java backups as well as Bedrock ones.
+- **Version requirements as the loaders read them:** Fabric predicates (`~`, `^`, `>=`, `.x`,
+  pre-releases) and Maven ranges (Forge, NeoForge).
+- **The game version comes from the mod.** It is the one version the mod names
+  (`~26.2`, `26.3.x`, `[1.21.1]`), or the one chosen with `--game <version>`.
+- **`ZipArchive::from_bytes`:** archives read in memory (a `.jar` inside a `.jar`), never
+  written to disk.
+
+### Verified
+
+- **No false positives:** the game's own assets, analysed as a pack, give no finding — Java
+  26.2 (20 873 references) and 26.3 (23 517 references).
+- **Faithful 32x 26.3:** nothing broken. One real off-size particle frame is reported as
+  information.
+- **Farmer's Delight 1.21.1:** 1591 references checked, 0 broken.
+- **Java 26.x is not obfuscated:** the `.jar` keeps the real class names, which settles how the
+  bytecode reader matches names.
+- **The game's code against itself:** every reference resolves — 26.2 (340 963) and 26.3
+  (350 837).
+- **Lithium and Sodium for 26.3, on 26.3:** nothing missing. Sodium's calls into Fabric API are
+  resolved through its bundled jars' Mixins.
+- **Lithium for 26.2, run on 26.3:** 17 failures with the Mixin checks. A sample was confirmed
+  with `javap` in both versions.
+
 ## [2.0.0] - 2026-10-16
 
 First public release. Kebitx is a semantic engine for Minecraft Bedrock add-ons: it analyses,
@@ -132,5 +206,6 @@ packs and mods to Bedrock. It is written in Rust with the standard library only.
 - Java shaders have no general Bedrock equivalent.
 - The tests were run on Windows by the author. Linux and macOS are covered by CI.
 
-[Unreleased]: https://github.com/Brashkie/kebitx/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Brashkie/kebitx/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Brashkie/kebitx/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Brashkie/kebitx/releases/tag/v2.0.0

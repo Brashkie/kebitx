@@ -281,17 +281,68 @@ repairs and optimises for its own sake, with the same rule: verdicts proven agai
 installed game (its `.jar`, its assets), never guessed. Levels, from least to most risk:
 
 **Level 1 — static analysis (no code runs)**
-- [ ] `kebitx analyze` for Java resource packs and mods: models whose parents or textures do
-  not exist, blockstates naming missing models, item definitions without models, language
-  files missing keys others have, animations (`.mcmeta`) on textures that are not strips —
-  checked against the pack, the mod and the Java game's own `.jar`
-- [ ] A class-file (bytecode) reader in Rust: the classes, methods and fields of Minecraft each
-  mod uses, and its Mixin targets, checked against the installed version's `.jar` — "this mod
-  calls a method that does not exist in 26.3". First to find out: whether the version's `.jar`
-  is obfuscated, which decides how names are matched
-- [ ] Mod sets: dependencies declared by each loader (`fabric.mod.json`, `mods.toml`) against
-  the mods present, duplicate ids, two mods' Mixins on the same target
-- [ ] Repairs as for Bedrock: only exact, reversible ones (backup, re-analysis, rollback)
+- [x] `kebitx analyze` for Java resource packs and mods (`kebitx-java`). It reads folders,
+  `.jar` and `.zip` in place, and checks against the pack, the mod and the game version whose
+  format the pack declares (format ranges included). Broken:
+  - models whose parent does not exist;
+  - textures that do not exist;
+  - blockstates and item definitions naming missing models;
+  - unbound `#variables` in used models;
+  - animations that do not divide into frames;
+  - `.png` files that are not PNGs (the game's own `PngInfo.validateHeader`).
+
+  Information: missing language keys, and proportions other than the game's.
+
+  Only `minecraft` and a mod's own namespace are proven; other mods' references are counted
+  as unchecked. The game's own assets give 0 findings (26.2: 20 873 references; 26.3:
+  23 517). On real content:
+  - Faithful 32x 26.3: 0 broken, and one real off-size frame (`noxious_gas_08`, 32×30);
+  - Farmer's Delight: 1591 references, 0 broken.
+- [x] A class-file (bytecode) reader in Rust (`kebitx_java::class`, std only, fuzzed by
+  truncation and byte changes). It checks the game classes, fields and methods each mod names,
+  and its `@Mixin` targets, against the installed version: "this mod calls a method that does
+  not exist in 26.3".
+  - **Names:** since 26.x the `.jar` is not obfuscated, so names match as they are. Mods built
+    for obfuscated versions (intermediary names) are detected and not compared.
+  - **Lookup:** as the JVM does. Missing only when the whole chain is known.
+  - **Environment:** the mod's bundled jars, read in memory, and what Mixins merge into their
+    targets.
+  - **Not claimed:** Forge/NeoForge patches and unbundled dependencies.
+  - **Proofs:**
+    - the game against itself: 26.2, 340 963 references; 26.3, 350 837; all resolve;
+    - Lithium and Sodium for 26.3: 0 missing;
+    - Lithium for 26.2 run on 26.3: 6 failures, each confirmed in the `.jar`s (the
+      `RedStoneWireBlock` → `RedstoneWireBlock` rename among them)
+- [x] What Mixins need of their targets (`kebitx_java::mixin`):
+  - `@Shadow` and `@Overwrite`, with prefix and aliases;
+  - `@Accessor` and `@Invoker` with explicit names;
+  - the method of every injector (Mixin's and MixinExtras'), never an inherited one;
+  - every `@At(target)`.
+
+  A required injection (`require`, else the config's `defaultRequire`) that matches nothing is
+  broken; with `require = 0` it is information.
+  - **Lithium for 26.2 on 26.3:** 17 failures; a sample was confirmed with `javap` in both
+    versions (`swingTime`, `spawners`, `tickChunks`, `serverTick`).
+  - **Lithium and Sodium for 26.3:** nothing broken. Sodium's one `require = 0` injection is
+    information.
+- [x] Mod sets (`kebitx_java::modset`): a `mods/` folder analysed as the loader sees it.
+  - **The game:** the installed version every mod accepts.
+  - **Each mod:** checked against the game and the others; their classes and Mixins count.
+  - **Refusals:** duplicate ids, missing dependencies (bundled jars provide), wrong versions
+    (Fabric predicates and Maven ranges, `minecraft` included), Fabric `breaks` and NeoForge
+    `incompatible`.
+  - **Information:** `@Overwrite` conflicts and mixed loaders.
+  - **Real sets for 26.3:** Fabric API + Lithium + Mod Menu + Sodium are clean. A bad set gets
+    exactly its three refusals.
+  - **Fixture test:** one problem of each kind, and nothing else.
+- [x] Repairs as for Bedrock (`kebitx_java::repair`): preview, backup next to the folder (the
+  same format, so `kebitx repair --undo` restores it), re-analysis, kept only if strictly
+  better.
+  - **Fixes:** `duplicates` keeps the highest version the game accepts; `incompatible` takes
+    out mods that reject the game's version.
+  - **Real set:** 20 problems → 1 → 0, and `--undo` restores every jar byte for byte.
+  - **Rollback:** a removal that leaves another mod without the version it needs is undone on
+    its own (test).
 
 **Level 2 — measuring a running game (with the JVM that is already there)**
 - [ ] Read profiles the player records: Java Flight Recorder (`.jfr`) and spark reports — hot
@@ -324,8 +375,10 @@ allocation — what Sodium, Lithium or FerriteCore improve from inside Java. Tak
   the GDK's read from `MicrosoftGame.Config`), a Bedrock Dedicated Server, Mojang's samples, or
   `KEBITX_BEDROCK_DIR` — a server's layout gives a catalog identical to the installed one
 - [x] Caches in each system's own folder; `com.mojang` on Android or by `KEBITX_COM_MOJANG`
-- [ ] Run the tests on Linux and macOS (CI) and the binaries on a phone: built and checked here,
-  not yet run outside Windows
+- [x] Run the tests on Linux and macOS: CI runs every test on Windows, Linux and macOS, green
+  since 2.0.0 (the one test that assumed an installed game now reads the game version the
+  report gives)
+- [ ] Run the binaries on a phone (the Android build is published, not yet run on a device)
 
 ## Build — compiling add-ons (`kebitx build`)
 

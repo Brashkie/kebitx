@@ -136,9 +136,9 @@ fn write_atomically(file: &Path, bytes: &[u8]) -> Result<(), String> {
     })
 }
 
-/// `<parent>/<world>.kebitx-backups/<seconds>`: next to the world, not in it,
-/// so a backup is never packaged with the world.
-fn backup_dir(root: &Path) -> Result<PathBuf, String> {
+/// `<parent>/<name>.kebitx-backups/<seconds>`: next to the folder, not in it,
+/// so a backup is never packaged with it (nor loaded as a mod).
+pub fn backup_dir(root: &Path) -> Result<PathBuf, String> {
     let name = root
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -164,7 +164,9 @@ fn backup_dir(root: &Path) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn write_index(backup: &Path, root: &Path, entries: &[(String, &str)]) -> Result<(), String> {
+/// The backup's index: the root, and each file with what was done to it
+/// (`"edit"` or `"delete"`). `restore` reads it.
+pub fn write_index(backup: &Path, root: &Path, entries: &[(String, &str)]) -> Result<(), String> {
     let files = entries
         .iter()
         .map(|(path, action)| {
