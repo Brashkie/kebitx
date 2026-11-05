@@ -23,7 +23,7 @@ use kebitx_core::codec::png::{self, Rgba};
 use kebitx_core::codec::tga;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Bedrock folders that pack many pictures into one sheet, by Java kind.
 pub const SHEET_FOLDERS: [(&str, &[&str]); 2] = [
@@ -33,15 +33,41 @@ pub const SHEET_FOLDERS: [(&str, &[&str]); 2] = [
 
 /// A picture's identity: its size and visible pixels.
 pub fn hash(img: &Rgba) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut eat = |b: u8| h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
-    img.width
-        .to_le_bytes()
-        .into_iter()
-        .chain(img.height.to_le_bytes())
-        .for_each(&mut eat);
-    img.pixels.iter().for_each(|&b| eat(b));
-    h
+    hash_region(img, 0, 0, img.width, img.height).unwrap_or(0)
+}
+
+/// `hash(&img.crop(x, y, w, h)?)`, without making the crop: the sheets'
+/// cells are hashed by the thousand, and copying each one first was most of
+/// the time. `None` when the region does not fit.
+pub fn hash_region(img: &Rgba, x: u32, y: u32, w: u32, h: u32) -> Option<u64> {
+    if x.checked_add(w)? > img.width || y.checked_add(h)? > img.height {
+        return None;
+    }
+    let mut v: u64 = 0xcbf2_9ce4_8422_2325;
+    let eat = |v: &mut u64, b: u8| *v = (*v ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+    for b in w.to_le_bytes().into_iter().chain(h.to_le_bytes()) {
+        eat(&mut v, b);
+    }
+    let row = w as usize * 4;
+    for r in 0..h as usize {
+        let at = ((y as usize + r) * img.width as usize + x as usize) * 4;
+        for &b in &img.pixels[at..at + row] {
+            eat(&mut v, b);
+        }
+    }
+    Some(v)
+}
+
+/// Nothing visible in a region (`is_blank` of its crop, without the crop).
+fn blank_region(img: &Rgba, x: u32, y: u32, w: u32, h: u32) -> bool {
+    (0..h as usize).all(|r| {
+        let at = ((y as usize + r) * img.width as usize + x as usize) * 4;
+        img.pixels[at..at + w as usize * 4]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| p[3] == 0)
+    })
 }
 
 /// A Bedrock material map (Vibrant Visuals: `_mers`, `_normal`,
@@ -124,11 +150,15 @@ pub struct BedrockPixels {
     /// The pictures of sheet folders, kept for cutting cells and pasting.
     pub sheets: HashMap<String, Rgba>,
     /// (kind, cell width, cell height) -> cell hash -> where: built on first
-    /// use, once per cell size.
-    cells: Mutex<HashMap<(String, u32, u32), Arc<CellIndex>>>,
+    /// use, once per cell size. The map's lock is held only to find a
+    /// size's slot: different sizes are built at the same time, and only the
+    /// threads that need the same size wait for it.
+    cells: Mutex<HashMap<(String, u32, u32), CellSlot>>,
 }
 
 type CellIndex = HashMap<u64, Vec<(String, u32, u32)>>;
+/// One cell size's index, built once by the first thread that needs it.
+type CellSlot = Arc<OnceLock<Arc<CellIndex>>>;
 
 impl BedrockPixels {
     /// Every texture of the installed game, decoded once.
@@ -183,32 +213,30 @@ impl BedrockPixels {
     fn cells(&self, kind: &str, w: u32, h: u32) -> Option<Arc<CellIndex>> {
         let folders = SHEET_FOLDERS.iter().find(|(k, _)| *k == kind)?.1;
         let key = (kind.to_string(), w, h);
-        let mut cache = self.cells.lock().ok()?;
-        if let Some(index) = cache.get(&key) {
-            return Some(index.clone());
-        }
-        let mut index = CellIndex::new();
-        for (stem, sheet) in &self.sheets {
-            let fits = sheet.width.is_multiple_of(w)
-                && sheet.height.is_multiple_of(h)
-                && (sheet.width, sheet.height) != (w, h);
-            if !fits || !folders.iter().any(|f| stem.starts_with(f)) {
-                continue;
-            }
-            for y in (0..sheet.height).step_by(h as usize) {
-                for x in (0..sheet.width).step_by(w as usize) {
-                    if let Some(cell) = sheet.crop(x, y, w, h).filter(|c| !is_blank(c)) {
-                        index
-                            .entry(hash(&cell))
-                            .or_default()
-                            .push((stem.clone(), x, y));
+        let slot = self.cells.lock().ok()?.entry(key).or_default().clone();
+        let index = slot.get_or_init(|| {
+            let mut index = CellIndex::new();
+            for (stem, sheet) in &self.sheets {
+                let fits = sheet.width.is_multiple_of(w)
+                    && sheet.height.is_multiple_of(h)
+                    && (sheet.width, sheet.height) != (w, h);
+                if !fits || !folders.iter().any(|f| stem.starts_with(f)) {
+                    continue;
+                }
+                for y in (0..sheet.height).step_by(h as usize) {
+                    for x in (0..sheet.width).step_by(w as usize) {
+                        if blank_region(sheet, x, y, w, h) {
+                            continue;
+                        }
+                        if let Some(cell) = hash_region(sheet, x, y, w, h) {
+                            index.entry(cell).or_default().push((stem.clone(), x, y));
+                        }
                     }
                 }
             }
-        }
-        let index = Arc::new(index);
-        cache.insert(key, index.clone());
-        Some(index)
+            Arc::new(index)
+        });
+        Some(index.clone())
     }
 }
 
@@ -329,16 +357,16 @@ pub fn prove(
         }
         for y in (0..java.height).step_by(bh as usize) {
             for x in (0..java.width).step_by(bw as usize) {
-                if let Some(region) = java.crop(x, y, bw, bh) {
-                    if !is_blank(&region) && hash(&region) == bh_hash {
-                        crops.push(Proof::Crop {
-                            stem: stem.clone(),
-                            x,
-                            y,
-                            w: bw,
-                            h: bh,
-                        });
-                    }
+                if hash_region(java, x, y, bw, bh) == Some(bh_hash)
+                    && !blank_region(java, x, y, bw, bh)
+                {
+                    crops.push(Proof::Crop {
+                        stem: stem.clone(),
+                        x,
+                        y,
+                        w: bw,
+                        h: bh,
+                    });
                 }
             }
         }
@@ -400,6 +428,31 @@ mod tests {
             }
         }
         bp
+    }
+
+    /// The region functions answer exactly what cropping first answered:
+    /// every region of a few pictures, transparent areas included.
+    #[test]
+    fn regions_hash_as_their_crops() {
+        let mut a = img(13, 7, 3);
+        for p in a.pixels.as_chunks_mut::<4>().0.iter_mut().step_by(3) {
+            *p = [0, 0, 0, 0];
+        }
+        let mut clear = Rgba::new(6, 4);
+        clear.pixels[5 * 4 + 3] = 9;
+        for pic in [img(8, 8, 1), a, clear] {
+            for (w, h) in [(1, 1), (2, 3), (4, 4), (pic.width, pic.height)] {
+                for y in 0..=pic.height {
+                    for x in 0..=pic.width {
+                        let crop = pic.crop(x, y, w, h);
+                        assert_eq!(hash_region(&pic, x, y, w, h), crop.as_ref().map(hash));
+                        if let Some(c) = crop {
+                            assert_eq!(blank_region(&pic, x, y, w, h), is_blank(&c));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn java(pics: &[&Rgba]) -> JavaPixels {

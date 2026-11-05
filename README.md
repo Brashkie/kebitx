@@ -58,6 +58,9 @@ then is it exported to the game or packed as a `.mcaddon`.
 - **It is fast.** A 29-pack world with 13 000+ files is analysed in about 0.5 s.
 - **It has no dependencies.** It is std-only Rust with no `unsafe` (except in the C ABI crate),
   and runs on Windows, Linux, macOS and Android.
+- **Optional native kernels.** With `--features native`, Zig builds libdeflate (C) and a Zig
+  SIMD kernel into kebitx for decoding. They are measured faster, and checked byte for byte
+  against the Rust they replace.
 
 ## Installation
 
@@ -88,6 +91,10 @@ cd kebitx
 cargo install --path crates/kebitx-cli     # installs `kebitx` into ~/.cargo/bin
 kebitx --version
 ```
+
+With [Zig 0.14](https://ziglang.org/download/) on the `PATH`, add `--features native` to build in
+the native kernels: libdeflate (C) and Zig SIMD, for faster decoding with the same results. See
+*Native kernels* under *Performance*.
 
 ## Quick start
 
@@ -718,7 +725,12 @@ Of the 1991 Java sound events, 633 are proven to be Bedrock events; of the 8559 
 only): every entry of the 26.3 `.jar` is read with its CRC-32 checked and every PNG decoded, as
 a test.
 
-`cargo test --workspace` shows 172 green (plus the Zig consumer's own `zig build test`), among them the core's fixture tests, the repair tests, the migration tests and the builder's
+The PNG decoder handles interlaced (Adam7) images, and skips an ancillary chunk with a bad CRC
+as the specification allows; 41 of Bedrock's own textures needed one or the other. On 287 of
+the game's PNGs, those 41 included, it gives the same RGBA pixels as javax.imageio, the JDK's
+own decoder.
+
+`cargo test --workspace` shows 178 green (in the pure and the native build) (plus the Zig consumer's own `zig build test`), among them the core's fixture tests, the repair tests, the migration tests and the builder's
 end-to-end tests (a real filter program, every export target, the safety rule). Fixture tests use an **empty** vanilla
 catalog, or a fake install built from `fixtures/fake_install`, so their verdict does not
 depend on which Minecraft is installed on the machine. That is also why `horse_pack_broken` is
@@ -850,9 +862,74 @@ is decoding? Measured phase by phase, decoding was 52 ms of the game's 350 ms in
 already runs on every core. libdeflate would have saved about 36 ms, for a C toolchain on every
 one of the 7 release targets and an `unsafe` boundary.
 
-The phases that ran in order cost far more, and fixing them in Rust saved 170 ms, so no native
-code was added. Both benchmarks stay in the repository: when decoding becomes the bottleneck
-(more cores, or larger archives), the decision can be measured again.
+The phases that ran in order cost far more, and fixing them in Rust saved 170 ms first. Both
+benchmarks stay in the repository, so the decision can be measured again.
+
+### Native kernels: where C and Zig do pay
+
+Decoding *pictures* is a different workload. `kebitx migrate` decodes the game's 8 218 Bedrock
+textures and the pack's own, and there:
+
+- zlib is 43 % of decoding a PNG;
+- undoing the PNG filters and converting to RGBA is the rest.
+
+Each kernel was measured against kebitx's best Rust on the same input, with the same output:
+
+| Kernel | Rust | Native | |
+|---|---|---|---|
+| DEFLATE / zlib | 187 MB/s | **libdeflate (C): 597 MB/s** | 11 383 class files of Java 26.3 |
+| PNG unfiltering | 651 MB/s (a loop per filter) | **Zig `@Vector`: 1 228 MB/s** (baseline x86-64, as released; 1 418 on this CPU) | 4 747 textures of Bedrock, 186 MB |
+
+Zig brings something stable Rust does not have here: portable SIMD in the language
+(`@Vector`); Rust's `std::simd` is nightly only. libdeflate is the fastest DEFLATE decoder
+there is, and its decompression side is vendored unmodified (`native/c/third_party/libdeflate`,
+MIT, with its version and sha256).
+
+```bash
+cargo build --release -p kebitx-cli --features native    # needs Zig 0.14 on the PATH (or ZIG=...)
+```
+
+How it fits together:
+
+- **The library:** `native/zig/kebitx-native/build.zig` builds one static library, the Zig
+  kernels plus libdeflate compiled by Zig's C compiler, for whatever target Cargo builds for.
+  Zig cross-compiles it as well as it compiles it: ARM64 Linux, macOS and Windows GNU were
+  built from Windows.
+- **The boundary:** `crates/kebitx-native` holds it, and it is the second crate with `unsafe`.
+  Without the feature it holds nothing, and kebitx is pure Rust that needs no Zig.
+- **The tests:** differential tests in `crates/kebitx-core/tests/native.rs` decode 150 DEFLATE and
+  zlib streams from another compressor (`fixtures/deflate/streams.bin`, written by
+  `zig build gen-streams`, the same bytes on every system) and every PNG filter case.
+  - Native and Rust must give identical bytes.
+  - On 1 559 damaged inputs, 344 decode the same, 1 215 are refused by both, and none is
+    accepted by only one.
+  - All 175 tests pass in both builds, including the real games: every class file of 26.3
+    through libdeflate, with its CRC, and the pixel proofs of the migrator.
+
+In a real run: decoding the 8 218 Bedrock textures goes from 1.22 s to 0.87 s on one core
+(−29 %). On `kebitx migrate` the native kernels alone took Faithful 32x from 6.9 s to 6.4 s. The
+rest of that command was not decoding; measured stage by stage, it was fixed in Rust:
+
+| `kebitx migrate` on Faithful 32x (3 953 textures) | Before | After |
+|---|---|---|
+| extracting the `.zip` | 1.84 s | 0.95 s |
+| the game's 8 218 textures (`BedrockPixels`) | 1.47 s | 0.62 s |
+| matching the pack's pictures (`inspect`) | 2.15 s | 0.49 s |
+| **the whole command** | **6.9 s** | **3.5 s** (3.4 s native) |
+
+The full report (`--all`, 5 104 lines) is identical before and after, in both builds. What was
+found in each stage:
+
+- **Extracting:** files were created one after the other. Now every name and the total size
+  are checked first, from the archive's directory, so hostile archives are still refused before
+  anything is written. Then every core decodes and writes.
+- **Reading the game's textures:** `map_files` gave each bundle of the game to one core, with
+  thousands of textures inside, while the other cores waited. Now the bundles are read first
+  and each file is decoded on any core: 1.3 s → 0.3 s.
+- **Matching:** 494 GUI sprites took 21.7 s of CPU between them. Looking for a sprite as a cell of
+  the game's sheets cropped every cell into a new picture to hash it, and built each cell size's
+  index under one lock. Now regions are hashed in place (a test proves the same hashes as the
+  crops), each cell size has its own slot (`OnceLock`), and the files are judged on every core.
 
 ## Validated on a real world
 
@@ -895,14 +972,18 @@ Zig is **not** automatically faster than Rust or C++. Performance depends on the
 memory layout, libraries and measurements. A module moves to native code only with a benchmark
 in hand — otherwise the project ends up as three duplicated implementations.
 
-That rule has been applied once so far, to DEFLATE decoding in the Java analysis, with Zig,
-zlib and libdeflate measured on the same input:
+That rule has been applied twice, with Zig, zlib and libdeflate measured on the same input:
 
-- Zig's decoder was no faster than kebitx's.
-- libdeflate was 3.2× faster, but decoding was 15 % of the real run, already on every core.
-- Fixing the algorithm and the serial phases in Rust saved more than libdeflate could have.
+- **For the Java analysis, no native code was added.** Zig's DEFLATE decoder was no faster than
+  kebitx's, and decoding was 15 % of the run. Fixing the algorithm and the serial phases in Rust
+  saved more.
+- **For pictures, native code was added, behind the optional `native` feature.**
+  - libdeflate (C): 3.2× kebitx's DEFLATE.
+  - A Zig `@Vector` kernel: 1.9× kebitx's PNG unfiltering on baseline x86-64.
+  - Both are built by Zig, and the differential tests prove they give the same bytes as the Rust
+    they replace.
 
-So no native code was added. See *Performance*.
+See *Performance*.
 
 ### Layout today
 
@@ -917,15 +998,18 @@ kebitx/
 │   ├── kebitx-repair/      # repairs: plan, backup, surgical edits, second analysis, rollback
 │   ├── kebitx-migrate/     # Java → Bedrock: report, textures, sounds, models, data, mods
 │   ├── kebitx-java/        # Java Edition: the installed game, analysis of packs and mods
-│   ├── kebitx-ffi/         # the C ABI (include/kebitx.h); the only crate with `unsafe`
+│   ├── kebitx-ffi/         # the C ABI (include/kebitx.h); a crate with `unsafe`
+│   ├── kebitx-native/      # optional native kernels (`native` feature): the other crate with `unsafe`
 │   └── kebitx-cli/         # the `kebitx` executable (analyze, build, repair, compare, migrate)
 ├── native/
 │   ├── zig/
+│   │   ├── kebitx-native/  # the native kernels: Zig (PNG unfiltering, SIMD) + libdeflate, one static library
 │   │   ├── kebitx-check/   # the C ABI's reference consumer, in Zig
 │   │   ├── bench-inflate/  # Zig's DEFLATE decoder measured on kebitx's input
 │   │   └── cross/          # zig cc as the linker for Linux x86-64 / ARM64 builds
 │   └── c/
-│       └── bench-inflate/  # zlib and libdeflate measured on the same input (sources not vendored)
+│       ├── third_party/libdeflate/  # libdeflate 1.26, decompression side, unmodified (MIT)
+│       └── bench-inflate/  # zlib and libdeflate measured on the same input
 ├── fixtures/               # synthetic packs and worlds, shared by every crate
 ├── .github/workflows/      # ci.yml (every push and pull request), release.yml (tags)
 ├── CHANGELOG.md
@@ -1004,6 +1088,10 @@ Issues and pull requests are welcome. Before opening a pull request, run the sam
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+
+# if you touch codec/ or native/ (needs Zig 0.14): the native build must give the same bytes
+cargo test --workspace --features kebitx-core/native
+(cd native/zig/kebitx-native && zig build test)
 ```
 
 New findings follow the project's one rule: a problem is reported only when it can be proven

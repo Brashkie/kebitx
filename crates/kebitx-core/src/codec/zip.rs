@@ -127,6 +127,12 @@ impl ZipArchive {
         self.entries.contains_key(name)
     }
 
+    /// The uncompressed size the central directory declares for an entry
+    /// (to be checked against limits before anything is read).
+    pub fn size(&self, name: &str) -> Option<u64> {
+        self.entries.get(name).map(|e| e.size)
+    }
+
     /// An entry's bytes, if it exists and is at most `limit` bytes.
     pub fn read(&self, name: &str, limit: u64) -> Result<Vec<u8>, String> {
         let e = self

@@ -84,13 +84,117 @@ fn be32(b: &[u8]) -> u32 {
     u32::from_be_bytes([b[0], b[1], b[2], b[3]])
 }
 
+/// The image's rows without their PNG filters: `raw` is `height` rows of
+/// one filter byte and `stride` bytes; `bpp` is the bytes per pixel (at
+/// least 1). With the `native` feature, the Zig kernel (the same bytes:
+/// see the differential tests); otherwise `unfilter_rust`.
+pub fn unfilter(raw: &[u8], stride: usize, height: usize, bpp: usize) -> Result<Vec<u8>, String> {
+    #[cfg(feature = "native")]
+    if let Some(r) = kebitx_native::unfilter(raw, stride, height, bpp) {
+        return r.map_err(str::to_string);
+    }
+    unfilter_rust(raw, stride, height, bpp)
+}
+
+/// kebitx's own unfiltering: a loop per filter, std only.
+pub fn unfilter_rust(
+    raw: &[u8],
+    stride: usize,
+    height: usize,
+    bpp: usize,
+) -> Result<Vec<u8>, String> {
+    if raw.len() != (stride + 1) * height {
+        return Err("PNG data of the wrong size".into());
+    }
+    let bpp = bpp.min(stride).max(1);
+    let mut rows = vec![0u8; stride * height];
+    // the row above the first is all zeros (PNG's rule)
+    let zeros = vec![0u8; stride];
+    for y in 0..height {
+        let filter = raw[y * (stride + 1)];
+        let src = &raw[y * (stride + 1) + 1..(y + 1) * (stride + 1)];
+        let (done, cur) = rows.split_at_mut(y * stride);
+        let prior = if y == 0 {
+            &zeros[..]
+        } else {
+            &done[(y - 1) * stride..]
+        };
+        unfilter_row(filter, src, prior, &mut cur[..stride], bpp)?;
+    }
+    Ok(rows)
+}
+
+/// One row: a loop per filter, so nothing is decided per byte.
+fn unfilter_row(
+    filter: u8,
+    src: &[u8],
+    prior: &[u8],
+    cur: &mut [u8],
+    bpp: usize,
+) -> Result<(), String> {
+    let n = cur.len();
+    let (src, prior) = (&src[..n], &prior[..n]);
+    match filter {
+        0 => cur.copy_from_slice(src),
+        1 => {
+            cur[..bpp].copy_from_slice(&src[..bpp]);
+            for i in bpp..n {
+                cur[i] = src[i].wrapping_add(cur[i - bpp]);
+            }
+        }
+        2 => {
+            for ((c, &s), &p) in cur.iter_mut().zip(src).zip(prior) {
+                *c = s.wrapping_add(p);
+            }
+        }
+        3 => {
+            for i in 0..bpp {
+                cur[i] = src[i].wrapping_add(prior[i] >> 1);
+            }
+            for i in bpp..n {
+                let avg = ((cur[i - bpp] as u16 + prior[i] as u16) >> 1) as u8;
+                cur[i] = src[i].wrapping_add(avg);
+            }
+        }
+        4 => {
+            // on the left edge a = c = 0, so Paeth predicts b
+            for i in 0..bpp {
+                cur[i] = src[i].wrapping_add(prior[i]);
+            }
+            for i in bpp..n {
+                cur[i] = src[i].wrapping_add(paeth(cur[i - bpp], prior[i], prior[i - bpp]));
+            }
+        }
+        _ => return Err("unknown PNG filter".into()),
+    }
+    Ok(())
+}
+
+/// The Paeth predictor (PNG 9.4), without branches on the data.
+#[inline(always)]
+fn paeth(a: u8, b: u8, c: u8) -> u8 {
+    let (a16, b16, c16) = (a as i16, b as i16, c as i16);
+    let pa = (b16 - c16).abs();
+    let pb = (a16 - c16).abs();
+    let pc = (a16 + b16 - 2 * c16).abs();
+    let use_a = pa <= pb && pa <= pc;
+    let use_b = pb <= pc;
+    if use_a {
+        a
+    } else if use_b {
+        b
+    } else {
+        c
+    }
+}
+
 /// Decode a PNG file's bytes.
 pub fn decode(data: &[u8]) -> Result<Rgba, String> {
     if !data.starts_with(&SIGNATURE) {
         return Err("not a PNG".into());
     }
     let mut pos = 8;
-    let mut header: Option<(u32, u32, u8, u8)> = None;
+    let mut header: Option<(u32, u32, u8, u8, u8)> = None;
     let mut palette: Vec<[u8; 4]> = Vec::new();
     let mut trns: Vec<u8> = Vec::new();
     let mut idat: Vec<u8> = Vec::new();
@@ -104,10 +208,17 @@ pub fn decode(data: &[u8]) -> Result<Rgba, String> {
         let crc = data
             .get(pos + 8 + len..pos + 12 + len)
             .ok_or("PNG chunk without CRC")?;
-        if be32(crc) != crc32(&data[pos + 4..pos + 8 + len]) {
-            return Err("PNG chunk CRC mismatch".into());
-        }
         pos += 12 + len;
+        if be32(crc) != crc32(&data[pos - 8 - len..pos - 4]) {
+            // a critical chunk (upper-case first letter) is the image: its
+            // damage is an error. An ancillary one (a colour profile, text)
+            // may be ignored, as the PNG specification allows and libpng
+            // does: six of the game's own UI textures have a damaged iCCP
+            if kind[0].is_ascii_uppercase() {
+                return Err("PNG chunk CRC mismatch".into());
+            }
+            continue;
+        }
         match &kind {
             b"IHDR" => {
                 if body.len() != 13 {
@@ -118,8 +229,8 @@ pub fn decode(data: &[u8]) -> Result<Rgba, String> {
                 if w == 0 || h == 0 || w as u64 * h as u64 > MAX_PIXELS {
                     return Err("PNG size out of range".into());
                 }
-                if interlace != 0 {
-                    return Err("interlaced PNG not supported".into());
+                if interlace > 1 {
+                    return Err("unknown PNG interlace method".into());
                 }
                 let ok = match color {
                     0 => matches!(depth, 1 | 2 | 4 | 8 | 16),
@@ -130,7 +241,7 @@ pub fn decode(data: &[u8]) -> Result<Rgba, String> {
                 if !ok {
                     return Err("PNG colour type / depth not allowed".into());
                 }
-                header = Some((w, h, depth, color));
+                header = Some((w, h, depth, color, interlace));
             }
             b"PLTE" => {
                 palette = body
@@ -146,62 +257,121 @@ pub fn decode(data: &[u8]) -> Result<Rgba, String> {
             _ => {}
         }
     }
-    let (w, h, depth, color) = header.ok_or("PNG without IHDR")?;
+    let (w, h, depth, color, interlace) = header.ok_or("PNG without IHDR")?;
     let channels = match color {
         0 | 3 => 1,
         2 => 3,
         4 => 2,
         _ => 4,
     };
+    let fmt = Format {
+        depth,
+        color,
+        channels,
+        palette: &palette,
+        trns: &trns,
+    };
     let bits_pp = channels * depth as usize;
-    let stride = (w as usize * bits_pp).div_ceil(8);
     let bpp = bits_pp.div_ceil(8).max(1);
-    let raw = zlib_decompress(&idat, (stride + 1) * h as usize).map_err(|e| e.to_string())?;
-    if raw.len() != (stride + 1) * h as usize {
+    let stride_of = |width: u32| (width as usize * bits_pp).div_ceil(8);
+    if interlace == 0 {
+        let stride = stride_of(w);
+        let raw = zlib_decompress(&idat, (stride + 1) * h as usize).map_err(|e| e.to_string())?;
+        if raw.len() != (stride + 1) * h as usize {
+            return Err("PNG data of the wrong size".into());
+        }
+        let rows = unfilter(&raw, stride, h as usize, bpp)?;
+        return to_rgba(&rows, w, h, stride, &fmt);
+    }
+    // Adam7 (PNG 8.2): seven reduced images, each filtered on its own, whose
+    // pixels go to every `dx`-th column and `dy`-th row from (`x0`, `y0`);
+    // an empty pass has no bytes at all
+    const PASSES: [(u32, u32, u32, u32); 7] = [
+        (0, 0, 8, 8),
+        (4, 0, 8, 8),
+        (0, 4, 4, 8),
+        (2, 0, 4, 4),
+        (0, 2, 2, 4),
+        (1, 0, 2, 2),
+        (0, 1, 1, 2),
+    ];
+    let size = |start: u32, total: u32, step: u32| total.saturating_sub(start).div_ceil(step);
+    let passes: Vec<(u32, u32, usize)> = PASSES
+        .iter()
+        .map(|&(x0, y0, dx, dy)| {
+            let (pw, ph) = (size(x0, w, dx), size(y0, h, dy));
+            (pw, ph, stride_of(pw))
+        })
+        .collect();
+    let total: usize = passes
+        .iter()
+        .filter(|(pw, ph, _)| *pw > 0 && *ph > 0)
+        .map(|(_, ph, stride)| (stride + 1) * *ph as usize)
+        .sum();
+    let raw = zlib_decompress(&idat, total).map_err(|e| e.to_string())?;
+    if raw.len() != total {
         return Err("PNG data of the wrong size".into());
     }
-    // unfilter in place, row by row
-    let mut rows = vec![0u8; stride * h as usize];
-    for y in 0..h as usize {
-        let filter = raw[y * (stride + 1)];
-        let src = &raw[y * (stride + 1) + 1..(y + 1) * (stride + 1)];
-        let (done, cur) = rows.split_at_mut(y * stride);
-        let prior = if y == 0 {
-            None
-        } else {
-            Some(&done[(y - 1) * stride..])
-        };
-        let cur = &mut cur[..stride];
-        for i in 0..stride {
-            let a = if i >= bpp { cur[i - bpp] as i16 } else { 0 };
-            let b = prior.map_or(0, |p| p[i] as i16);
-            let c = if i >= bpp {
-                prior.map_or(0, |p| p[i - bpp] as i16)
-            } else {
-                0
-            };
-            let pred = match filter {
-                0 => 0,
-                1 => a,
-                2 => b,
-                3 => (a + b) / 2,
-                4 => {
-                    let p = a + b - c;
-                    let (pa, pb, pc) = ((p - a).abs(), (p - b).abs(), (p - c).abs());
-                    if pa <= pb && pa <= pc {
-                        a
-                    } else if pb <= pc {
-                        b
-                    } else {
-                        c
-                    }
-                }
-                _ => return Err("unknown PNG filter".into()),
-            };
-            cur[i] = src[i].wrapping_add(pred as u8);
+    let mut out = Rgba::new(w, h);
+    let mut at = 0;
+    for (&(x0, y0, dx, dy), &(pw, ph, stride)) in PASSES.iter().zip(&passes) {
+        if pw == 0 || ph == 0 {
+            continue;
+        }
+        let len = (stride + 1) * ph as usize;
+        let rows = unfilter(&raw[at..at + len], stride, ph as usize, bpp)?;
+        at += len;
+        let pass = to_rgba(&rows, pw, ph, stride, &fmt)?;
+        for j in 0..ph as usize {
+            for i in 0..pw as usize {
+                let (x, y) = (x0 as usize + i * dx as usize, y0 as usize + j * dy as usize);
+                let to = (y * w as usize + x) * 4;
+                let from = (j * pw as usize + i) * 4;
+                out.pixels[to..to + 4].copy_from_slice(&pass.pixels[from..from + 4]);
+            }
         }
     }
-    // to RGBA
+    Ok(out)
+}
+
+/// What the rows' samples mean.
+struct Format<'a> {
+    depth: u8,
+    color: u8,
+    channels: usize,
+    palette: &'a [[u8; 4]],
+    trns: &'a [u8],
+}
+
+/// Unfiltered rows (`stride` bytes each) -> RGBA pixels.
+fn to_rgba(rows: &[u8], w: u32, h: u32, stride: usize, fmt: &Format) -> Result<Rgba, String> {
+    let Format {
+        depth,
+        color,
+        channels,
+        palette,
+        trns,
+    } = *fmt;
+    // the two formats nearly every texture uses (the game's: 98 % of its
+    // pixels), without a decision per pixel
+    if depth == 8 && color == 6 && stride == w as usize * 4 {
+        return Ok(Rgba {
+            width: w,
+            height: h,
+            pixels: rows[..stride * h as usize].to_vec(),
+        });
+    }
+    if depth == 8 && color == 2 && trns.is_empty() && stride == w as usize * 3 {
+        let mut pixels = Vec::with_capacity(w as usize * h as usize * 4);
+        for &[r, g, b] in rows[..stride * h as usize].as_chunks::<3>().0 {
+            pixels.extend_from_slice(&[r, g, b, 255]);
+        }
+        return Ok(Rgba {
+            width: w,
+            height: h,
+            pixels,
+        });
+    }
     let mut out = Rgba::new(w, h);
     let sample = |row: &[u8], x: usize, ch: usize| -> u16 {
         match depth {
@@ -315,6 +485,127 @@ mod tests {
     fn encode_then_decode_is_the_identity() {
         let img = sample();
         assert_eq!(decode(&encode(&img)).unwrap(), img);
+    }
+
+    /// A PNG from chunks, each with its CRC (or a wrong one when asked).
+    fn png_of(chunks: &[(&[u8; 4], Vec<u8>, bool)]) -> Vec<u8> {
+        let mut out = SIGNATURE.to_vec();
+        for (kind, body, good_crc) in chunks {
+            out.extend((body.len() as u32).to_be_bytes());
+            let start = out.len();
+            out.extend(*kind);
+            out.extend(body);
+            let crc = crc32(&out[start..]) ^ if *good_crc { 0 } else { 1 };
+            out.extend(crc.to_be_bytes());
+        }
+        out
+    }
+
+    /// Adam7 written by hand, as an encoder does: seven reduced images, each
+    /// row behind its filter byte (Sub and Up, so unfiltering runs per pass).
+    fn interlaced(img: &Rgba, color: u8) -> Vec<u8> {
+        let ch = if color == 6 { 4 } else { 3 };
+        let passes = [
+            (0, 0, 8, 8),
+            (4, 0, 8, 8),
+            (0, 4, 4, 8),
+            (2, 0, 4, 4),
+            (0, 2, 2, 4),
+            (1, 0, 2, 2),
+            (0, 1, 1, 2),
+        ];
+        let mut raw = Vec::new();
+        for (x0, y0, dx, dy) in passes {
+            let pw = img.width.saturating_sub(x0).div_ceil(dx);
+            let ph = img.height.saturating_sub(y0).div_ceil(dy);
+            if pw == 0 || ph == 0 {
+                continue;
+            }
+            let mut prior = vec![0u8; pw as usize * ch];
+            for j in 0..ph {
+                let mut row = Vec::new();
+                for i in 0..pw {
+                    let p = img.pixel(x0 + i * dx, y0 + j * dy);
+                    row.extend(&p[..ch]);
+                }
+                let up = j % 2 == 1;
+                raw.push(if up { 2 } else { 1 });
+                for k in 0..row.len() {
+                    let pred = if up {
+                        prior[k]
+                    } else if k >= ch {
+                        row[k - ch]
+                    } else {
+                        0
+                    };
+                    raw.push(row[k].wrapping_sub(pred));
+                }
+                prior = row;
+            }
+        }
+        let mut ihdr = Vec::new();
+        ihdr.extend(img.width.to_be_bytes());
+        ihdr.extend(img.height.to_be_bytes());
+        ihdr.extend([8, color, 0, 0, 1]);
+        png_of(&[
+            (b"IHDR", ihdr, true),
+            (b"IDAT", zlib_compress(&raw), true),
+            (b"IEND", Vec::new(), true),
+        ])
+    }
+
+    #[test]
+    fn interlaced_images_decode_to_their_pixels() {
+        for (w, h) in [
+            (1, 1),
+            (2, 1),
+            (1, 9),
+            (3, 5),
+            (8, 8),
+            (9, 9),
+            (13, 7),
+            (33, 17),
+        ] {
+            let mut img = Rgba::new(w, h);
+            for (i, p) in img.pixels.iter_mut().enumerate() {
+                *p = (i * 53 % 251) as u8;
+            }
+            assert_eq!(decode(&interlaced(&img, 6)).unwrap(), img, "{w}x{h} RGBA");
+            // RGB: the same picture, opaque
+            let mut opaque = img.clone();
+            for p in opaque.pixels.as_chunks_mut::<4>().0 {
+                p[3] = 255;
+            }
+            assert_eq!(
+                decode(&interlaced(&opaque, 2)).unwrap(),
+                opaque,
+                "{w}x{h} RGB"
+            );
+            // the same pixels as the plain (not interlaced) encoding
+            assert_eq!(decode(&encode(&img)).unwrap(), img);
+        }
+    }
+
+    #[test]
+    fn a_damaged_ancillary_chunk_is_ignored_a_critical_one_is_not() {
+        let img = sample();
+        let plain = encode(&img);
+        // the encoder's IHDR, IDAT and IEND, with an ancillary chunk between
+        let ihdr_end = 8 + 12 + 13;
+        let mut with_text = plain[..ihdr_end].to_vec();
+        with_text.extend(png_of(&[(b"iCCP", b"profile".to_vec(), false)])[8..].to_vec());
+        with_text.extend(&plain[ihdr_end..]);
+        assert_eq!(
+            decode(&with_text).unwrap(),
+            img,
+            "a damaged iCCP is skipped"
+        );
+
+        // a damaged IDAT is the image itself: refused
+        let mut bad_idat = plain.clone();
+        let idat_crc = bad_idat.len() - 12 - 4;
+        bad_idat[idat_crc] ^= 1;
+        assert_eq!(decode(&bad_idat), Err("PNG chunk CRC mismatch".into()));
     }
 
     #[test]

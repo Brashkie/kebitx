@@ -220,3 +220,61 @@ fn index_phases() {
         kebitx_core::par::threads()
     );
 }
+
+/// Every PNG of the game's `.jar`: the whole decode, and the zlib part of it
+/// alone (the IDAT stream). What a faster DEFLATE decoder would change.
+#[test]
+#[ignore]
+fn png_decoding() {
+    let Some(java) = JavaAssets::discover() else {
+        return;
+    };
+    let jar = java.jar_for(None).unwrap();
+    let mem = jar.zip.in_memory().unwrap();
+    let files: Vec<Vec<u8>> = mem
+        .names()
+        .filter(|n| n.ends_with(".png"))
+        .map(|n| mem.read(n, 64 << 20).unwrap())
+        .collect();
+
+    // the IDAT streams, concatenated per image
+    let idats: Vec<Vec<u8>> = files
+        .iter()
+        .map(|b| {
+            let (mut at, mut idat) = (8usize, Vec::new());
+            while at + 8 <= b.len() {
+                let len = u32::from_be_bytes(b[at..at + 4].try_into().unwrap()) as usize;
+                if &b[at + 4..at + 8] == b"IDAT" {
+                    idat.extend_from_slice(&b[at + 8..at + 8 + len]);
+                }
+                at += 12 + len;
+            }
+            idat
+        })
+        .collect();
+
+    let t = Instant::now();
+    let mut pixels = 0usize;
+    for b in &files {
+        if let Ok(img) = kebitx_core::codec::png::decode(b) {
+            pixels += img.pixels.len();
+        }
+    }
+    let whole = t.elapsed();
+
+    let t = Instant::now();
+    let mut out = 0usize;
+    for d in &idats {
+        if let Ok(o) = kebitx_core::codec::zlib_decompress(d, 256 << 20) {
+            out += o.len();
+        }
+    }
+    let zlib = t.elapsed();
+    eprintln!(
+        "{} PNGs, {:.1} MB of pixels: whole decode {whole:?}; zlib part {zlib:?} ({:.0} %, {:.1} MB inflated)",
+        files.len(),
+        pixels as f64 / 1e6,
+        zlib.as_secs_f64() / whole.as_secs_f64() * 100.0,
+        out as f64 / 1e6
+    );
+}

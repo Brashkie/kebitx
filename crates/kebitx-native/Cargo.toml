@@ -1,0 +1,15 @@
+[package]
+name = "kebitx-native"
+description = "Optional native kernels for kebitx (Zig and C, built by Zig), each checked against the Rust they replace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+build = "build.rs"
+links = "kebitx_native"
+
+[features]
+# Off by default: kebitx stays pure Rust and builds anywhere without Zig.
+# On, build.rs builds native/zig/kebitx-native with Zig (0.14) for the target.
+native = []

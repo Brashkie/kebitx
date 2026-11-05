@@ -1,4 +1,5 @@
-# Every change: formatting, lint, every test on three systems, a short fuzzing
+# Every change: formatting, lint, every test on three systems (pure Rust and
+# with the native kernels), a short fuzzing
 # pass, the documentation, every shipped target, and the Zig consumer.
 # The tests do not need Minecraft: fixtures use an empty or fake game catalog,
 # and the tests against the real installed games skip themselves where there is none.
@@ -133,3 +134,40 @@ jobs:
           set -e
           # the fixture has one empty texture set and one case mismatch
           test $code -eq 1 || { echo "::error::expected exit 1 from the fixture, got $code"; exit 1; }
+
+  # kebitx built with its native kernels (libdeflate in C and the Zig PNG
+  # kernel, both built by Zig): every test again, which includes the
+  # differential tests that compare each native output with the Rust one
+  native:
+    name: Native kernels (${{ matrix.os }})
+    needs: fmt
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+      - name: Zig unit tests
+        working-directory: native/zig/kebitx-native
+        run: zig build test
+      - name: The DEFLATE fixture is what its generator writes
+        shell: bash
+        working-directory: native/zig/kebitx-native
+        run: |
+          zig build gen-streams -- "$RUNNER_TEMP/streams.bin"
+          cmp "$RUNNER_TEMP/streams.bin" ../../../fixtures/deflate/streams.bin \
+            || { echo "::error::fixtures/deflate/streams.bin differs from zig build gen-streams"; exit 1; }
+      - name: Clippy with the native kernels
+        run: cargo clippy --workspace --all-targets --features kebitx-core/native -- -D warnings
+      - name: Every test with the native kernels
+        run: cargo test --workspace --features kebitx-core/native --no-fail-fast

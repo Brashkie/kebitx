@@ -444,11 +444,41 @@ change only if the report stays byte-for-byte the same.
     already runs on every core. That is not worth a C toolchain on 7 targets. The serial
     phases, fixed in Rust, saved 170 ms.
   - **The benchmarks stay:** `native/zig/bench-inflate` and `native/c/bench-inflate`.
+- [x] Native kernels where pictures are decoded (`--features native`, `crates/kebitx-native`,
+  `native/zig/kebitx-native`):
+  - **The kernels:** libdeflate (C, vendored unmodified) for DEFLATE and zlib, and a Zig `@Vector`
+    kernel for PNG unfiltering, one static library built by Zig for Cargo's target.
+  - **Measured on the same input:** libdeflate 597 MB/s against kebitx's 187 MB/s; Zig 1 228 MB/s
+    on baseline x86-64 against 651 MB/s for kebitx's specialised Rust. The Rust itself went from
+    one generic loop to a loop per filter.
+  - **The proof:** differential tests (150 streams from another compressor, 1 559 damaged
+    inputs, every filter case) show identical bytes on both paths. All 175 tests pass in both
+    builds, and CI runs both on Windows, Linux and macOS.
+  - **Result:** decoding the 8 218 Bedrock textures, 1.22 s → 0.87 s on one core.
+- [x] `kebitx migrate`, stage by stage (`crates/kebitx-migrate/tests/profile.rs`), on Faithful
+  32x: 6.9 s → 3.5 s, with the full report identical.
+  - **Extraction:** names and sizes are checked first, then the files are written on every
+    core: 1.84 → 0.95 s.
+  - **`map_files`:** one bundle no longer runs on one core: 1.47 → 0.62 s.
+  - **`inspect`:** cells are hashed in place, there is one slot per cell size, and files are
+    judged on every core: 2.15 → 0.49 s.
+- [x] PNG completeness, found by measuring. 42 of the game's own textures could not be decoded,
+  so they could prove nothing in `kebitx migrate`:
+  - **35 interlaced (Adam7):** now supported;
+  - **6 with a damaged iCCP:** an ancillary chunk's bad CRC is now ignored, as the specification
+    allows and libpng does;
+  - **1 not a PNG:** still refused, rightly.
+
+  **Checked:** against javax.imageio on 287 of the game's PNGs, all of the above included: the
+  same RGBA pixels, every one. On Faithful 32x, one more texture converts with a pixel proof
+  (`humanoid_baby/chainmail` → `chainmail_baby`).
+- [x] PNG → RGBA: direct paths for 8-bit RGBA and RGB (98 % of the game's pixels). That part
+  went from 100–340 ms to 74–155 ms of the textures' decoding, so a Zig kernel for it would not
+  pay; it is not written.
 - [ ] Next measured candidates:
-  - the game's class index on disk, as the Bedrock catalog is (≈180 ms per run);
-  - a DEFLATE fast loop (zlib's `inflate_fast`, libdeflate's word-at-a-time copies), in Rust,
-    to close the gap with zlib;
-  - libdeflate behind an optional feature, if decoding ever becomes most of a run.
+  - `kebitx migrate`: reading the pack in place instead of extracting it (0.95 s left);
+  - the native kernels in the release binaries, once CI has run them on every system;
+  - the game's class index on disk, as the Bedrock catalog is (≈180 ms per run).
 
 ## Security — hardening against hostile input
 

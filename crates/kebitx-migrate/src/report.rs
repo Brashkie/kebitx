@@ -561,7 +561,22 @@ pub fn inspect(java_root: &Path, refs: References) -> MigrationReport {
 
     let mut animations: HashMap<String, Json> = HashMap::new();
     let mut makes: HashMap<String, Make> = HashMap::new();
+    // `classify` only reads: every file it judges (decoding pictures and
+    // looking for their proofs is most of a pack) runs on every core, results
+    // in file order; the few files that write to the report stay below
+    let special = |f: &str| {
+        let lower = f.to_ascii_lowercase();
+        matches!(
+            f,
+            "pack.mcmeta" | "pack.png" | "assets/minecraft/sounds.json"
+        ) || (lower.starts_with("assets/minecraft/lang/") && lower.ends_with(".json"))
+    };
+    let mut classified = kebitx_core::par::par_map(&ctx.files, |f| {
+        (!special(f)).then(|| classify(f, &ctx, used_sounds))
+    })
+    .into_iter();
     for f in &ctx.files {
+        let judged = classified.next().flatten();
         let entry = |verdict, bedrock: Option<String>, exact, reason| Entry {
             java: f.clone(),
             verdict,
@@ -592,7 +607,8 @@ pub fn inspect(java_root: &Path, refs: References) -> MigrationReport {
                 language(f, &code, &ctx, key_map.as_ref(), &mut report)
             }
             _ => {
-                let (e, anim, make) = classify(f, &ctx, used_sounds);
+                // classified above; never missing, but a library does not panic on it
+                let (e, anim, make) = judged.unwrap_or_else(|| classify(f, &ctx, used_sounds));
                 if let Some(a) = anim {
                     animations.insert(f.clone(), a);
                 }

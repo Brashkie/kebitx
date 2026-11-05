@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "2.2.0"
+version = "2.3.0"
 edition = "2021"
 license = "MIT"
 authors = ["Brashkie"]
@@ -16,3 +16,4 @@ kebitx-build = { path = "crates/kebitx-build" }
 kebitx-repair = { path = "crates/kebitx-repair" }
 kebitx-migrate = { path = "crates/kebitx-migrate" }
 kebitx-java = { path = "crates/kebitx-java" }
+kebitx-native = { path = "crates/kebitx-native" }

@@ -59,32 +59,44 @@ pub fn open(path: &Path) -> Result<Input, String> {
         root: root.clone(),
         temp: true,
     };
-    let mut total = 0u64;
-    let mut names: Vec<&String> = zip.names().collect();
+    // 1. every name and the total size are checked before anything is
+    //    written (`read` refuses an entry whose real size is not the one
+    //    declared, so the declared sizes bound what is written)
+    let mut names: Vec<&String> = zip.names().filter(|n| !n.ends_with('/')).collect();
     names.sort();
-    for name in names {
-        if name.ends_with('/') {
-            continue;
-        }
+    let mut total = 0u64;
+    for name in &names {
         if !safe_name(name) {
             return Err(format!(
                 "{}: entry {name:?} would land outside the folder: refused",
                 path.display()
             ));
         }
-        let bytes = zip.read(name, MAX_ENTRY)?;
-        total += bytes.len() as u64;
+        total = total.saturating_add(zip.size(name).unwrap_or(u64::MAX));
         if total > MAX_TOTAL {
             return Err(format!(
                 "{}: larger than a pack or a mod can be",
                 path.display()
             ));
         }
-        let dst = root.join(name);
-        if let Some(dir) = dst.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(&dst, bytes).map_err(|e| e.to_string())?;
+    }
+    // 2. the folders, once each
+    let dirs: std::collections::BTreeSet<PathBuf> = names
+        .iter()
+        .filter_map(|n| root.join(n).parent().map(Path::to_path_buf))
+        .collect();
+    for dir in &dirs {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    // 3. decoding and writing on every core: creating thousands of small
+    //    files one after the other was most of `kebitx migrate` on a pack
+    let zip = zip.in_memory()?;
+    let written = kebitx_core::par::par_map(&names, |name| {
+        let bytes = zip.read(name, MAX_ENTRY)?;
+        std::fs::write(root.join(name), bytes).map_err(|e| format!("{name}: {e}"))
+    });
+    if let Some(e) = written.into_iter().find_map(Result::err) {
+        return Err(e);
     }
     Ok(input)
 }

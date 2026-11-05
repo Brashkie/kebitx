@@ -224,8 +224,27 @@ const DIST_EXTRA: [u8; 30] = [
 ];
 
 /// Raw DEFLATE data -> bytes, at most `limit` of them. Returns the output and
-/// how many input bytes the stream used.
+/// how many input bytes the stream used. With the `native` feature this is
+/// libdeflate (the same bytes: see the differential tests); otherwise, and
+/// whenever the native library is not usable, `inflate_rust`.
 pub fn inflate(data: &[u8], limit: usize) -> Result<(Vec<u8>, usize), InflateError> {
+    #[cfg(feature = "native")]
+    if let Some(r) = kebitx_native::inflate(data, limit) {
+        return r.map_err(native_error);
+    }
+    inflate_rust(data, limit)
+}
+
+#[cfg(feature = "native")]
+fn native_error(e: kebitx_native::Error) -> InflateError {
+    match e {
+        kebitx_native::Error::Invalid => InflateError::Invalid("rejected by libdeflate"),
+        kebitx_native::Error::TooLarge => InflateError::TooLarge,
+    }
+}
+
+/// kebitx's own DEFLATE decoder, std only (see the module).
+pub fn inflate_rust(data: &[u8], limit: usize) -> Result<(Vec<u8>, usize), InflateError> {
     let mut bits = Bits::new(data);
     // room for typical ratios up front; a claim beyond the limit is never
     // reserved (a hostile stream cannot make this allocate more)
@@ -404,7 +423,17 @@ fn codes(
 }
 
 /// A zlib stream (header, DEFLATE data, Adler-32) -> bytes, at most `limit`.
+/// With the `native` feature, libdeflate; otherwise `zlib_decompress_rust`.
 pub fn zlib_decompress(data: &[u8], limit: usize) -> Result<Vec<u8>, InflateError> {
+    #[cfg(feature = "native")]
+    if let Some(r) = kebitx_native::zlib_decompress(data, limit) {
+        return r.map_err(native_error);
+    }
+    zlib_decompress_rust(data, limit)
+}
+
+/// kebitx's own zlib decoder, std only.
+pub fn zlib_decompress_rust(data: &[u8], limit: usize) -> Result<Vec<u8>, InflateError> {
     let (&cmf, &flg) = (
         data.first().ok_or(InflateError::Truncated)?,
         data.get(1).ok_or(InflateError::Truncated)?,
@@ -415,7 +444,7 @@ pub fn zlib_decompress(data: &[u8], limit: usize) -> Result<Vec<u8>, InflateErro
     if flg & 0x20 != 0 {
         return Err(InflateError::Invalid("zlib preset dictionary"));
     }
-    let (out, used) = inflate(&data[2..], limit)?;
+    let (out, used) = inflate_rust(&data[2..], limit)?;
     let tail = data
         .get(2 + used..2 + used + 4)
         .ok_or(InflateError::Truncated)?;
@@ -441,7 +470,9 @@ mod tests {
 
     #[test]
     fn hostile_input_is_an_error_never_a_panic() {
-        assert_eq!(inflate(&[], 10), Err(InflateError::Truncated));
+        // the Rust decoder says why; the native one (libdeflate) only refuses
+        assert_eq!(inflate_rust(&[], 10), Err(InflateError::Truncated));
+        assert!(inflate(&[], 10).is_err());
         assert!(inflate(&[0x07], 10).is_err(), "block type 3");
         // a stored block larger than the limit
         assert_eq!(

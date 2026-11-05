@@ -9,6 +9,11 @@ license.workspace = true
 name = "kebitx"
 path = "src/main.rs"
 
+[features]
+# DEFLATE, zlib and PNG unfiltering in native code (libdeflate and Zig, built
+# by Zig 0.14); off by default: kebitx is pure Rust then
+native = ["kebitx-core/native"]
+
 [dependencies]
 kebitx-core.workspace = true
 kebitx-build.workspace = true
