@@ -144,7 +144,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # macos-15, not macos-latest: Zig 0.14 cannot link its own build runner
+        # against the newer macOS SDK (undefined _abort, _malloc, ...). Zig 0.15
+        # supports it, but its API changed (std.compress among others): moving
+        # to it is tracked in ROADMAP.md
+        os: [windows-latest, ubuntu-latest, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

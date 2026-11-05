@@ -475,6 +475,10 @@ change only if the report stays byte-for-byte the same.
 - [x] PNG → RGBA: direct paths for 8-bit RGBA and RGB (98 % of the game's pixels). That part
   went from 100–340 ms to 74–155 ms of the textures' decoding, so a Zig kernel for it would not
   pay; it is not written.
+- [ ] Zig 0.15: Zig 0.14 cannot link its own build runner on the newest macOS (CI runs the
+  native job on `macos-15` meanwhile). Moving means porting the three `build.zig` and the
+  Zig sources to the new standard library (`std.compress.flate` and `std.io` changed), and
+  checking that `fixtures/deflate/streams.bin` stays byte for byte the same
 - [ ] Next measured candidates:
   - `kebitx migrate`: reading the pack in place instead of extracting it (0.95 s left);
   - the native kernels in the release binaries, once CI has run them on every system;
