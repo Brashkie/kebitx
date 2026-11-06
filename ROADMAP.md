@@ -506,7 +506,7 @@ change only if the report stays byte-for-byte the same.
   something asks about it. One mod 316 → 165 ms, a mods folder 635 → 477 ms, reports unchanged.
   This replaces the idea of keeping the index on disk.
 - [x] The native kernels in the release's CLI, with a CI job that builds all 7 targets and runs the
-  differential tests where the binary can run. +28 KB on Windows; a mods folder 477 → 413 ms
+  differential tests where the binary can run. +28 KB on Windows; a mods folder 477 → 421 ms
 - [ ] Next candidates, to be measured first:
   - `kebitx migrate`: reading the pack in place instead of extracting it (0.95 s left);
   - a mods folder: each mod's classes are parsed for the context and again for its own check;

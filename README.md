@@ -843,7 +843,7 @@ Where the time went, and what fixed it:
 - **Then the whole index stopped being built.** A mod names a small part of the game, so the
   index now lists the `.jar`'s names and reads a class the first time something asks about it.
   A test checks every class of every installed game: its entry name is the class it holds.
-  One mod (Lithium): 316 → 165 ms. A mods folder: 635 → 477 ms, or 413 ms with the native
+  One mod (Lithium): 316 → 165 ms. A mods folder: 635 → 477 ms, or 421 ms with the native
   kernels.
 
 The reports are identical before and after: the same 3 refusals and 17 failures on the bad set,

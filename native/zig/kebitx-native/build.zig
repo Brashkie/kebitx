@@ -33,6 +33,8 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     lib.bundle_compiler_rt = true;
+    // Rust links static-pie on musl, so every object must be position independent
+    lib.root_module.pic = true;
     const libdeflate = b.path("../../c/third_party/libdeflate");
     lib.addIncludePath(libdeflate);
     var flags = std.ArrayList([]const u8).init(b.allocator);
@@ -41,6 +43,9 @@ pub fn build(b: *std.Build) void {
     // ("requires target feature evex512"); libdeflate's own switch leaves it
     // out, and the AVX2 path, picked at run time, stays
     flags.append("-DLIBDEFLATE_ASSEMBLER_DOES_NOT_SUPPORT_AVX512VNNI") catch @panic("OOM");
+    // libdeflate's ARM CPU detection on Linux uses O_CLOEXEC, which glibc's headers hide
+    // under a strict -std=c99
+    flags.append("-D_GNU_SOURCE") catch @panic("OOM");
     lib.addCSourceFiles(.{ .root = libdeflate, .files = &libdeflate_sources, .flags = flags.items });
     b.installArtifact(lib);
 
