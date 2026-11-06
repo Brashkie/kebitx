@@ -24,7 +24,12 @@
 use crate::class::{self, ClassFile, MemberRef, RefKind, Value};
 use crate::game::JavaJar;
 use crate::source::Source;
+use kebitx_core::codec::zip::ZipArchive;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::OnceLock;
+
+/// One class file of the game is far smaller than this.
+const CLASS_LIMIT: u64 = 16 * 1024 * 1024;
 
 /// What the game declares of one class.
 #[derive(Debug, Default, Clone)]
@@ -52,14 +57,15 @@ impl GameClass {
     }
 }
 
-/// Every class of one game version.
-#[derive(Debug, Default)]
-pub struct GameIndex {
-    pub classes: HashMap<String, GameClass>,
+/// Every class of one game version. Listing them takes the `.jar`'s names only:
+/// a class is read and decoded the first time something asks about it, and
+/// kept. A mod names a small part of the game, so most are never read.
+#[derive(Default)]
+pub struct GameIndex<'j> {
+    zip: Option<&'j ZipArchive>,
+    classes: HashMap<String, OnceLock<Option<GameClass>>>,
     /// Package roots of the `.jar`'s classes (`net/minecraft/`, ...).
-    pub roots: BTreeSet<String>,
-    /// Class files of the `.jar` that could not be read.
-    pub unreadable: usize,
+    roots: BTreeSet<String>,
 }
 
 /// `net/minecraft/` for the game's own package, else the first three
@@ -101,40 +107,55 @@ pub enum Found {
     Unknown,
 }
 
-impl GameIndex {
-    /// Every class of a game version's `.jar`. The archive is read into
-    /// memory once (tens of ms) so every core reads from it without waiting
-    /// on one file handle; reading, decoding and building each class's sets
-    /// all happen on every core, and only the final inserts run in order.
-    pub fn from_jar(jar: &JavaJar) -> Self {
-        let mem = jar.zip.in_memory().ok();
-        let zip = mem.as_ref().unwrap_or(&jar.zip);
-        let names: Vec<&String> = zip.names().filter(|n| n.ends_with(".class")).collect();
-        let built = kebitx_core::par::par_map(&names, |n| {
-            zip.read(n, 16 * 1024 * 1024)
-                .ok()
-                .and_then(|b| class::parse(&b).ok())
-                .map(|c| (c.name.clone(), GameClass::of(&c)))
-        });
-        let mut index = Self::default();
-        for c in built {
-            match c {
-                Some((name, gc)) => index.insert(name, gc),
-                None => index.unreadable += 1,
+impl<'j> GameIndex<'j> {
+    /// The classes of a game version's `.jar`, by their names. Multi-release
+    /// copies (`META-INF/versions/<n>/`) repeat classes for other JDKs.
+    pub fn from_jar(jar: &'j JavaJar) -> Self {
+        let mut index = Self {
+            zip: Some(&jar.zip),
+            ..Default::default()
+        };
+        for name in jar.zip.names() {
+            if let Some(class) = name
+                .strip_suffix(".class")
+                .filter(|_| !name.starts_with("META-INF/"))
+            {
+                index.list(class, OnceLock::new());
             }
         }
         index
     }
 
+    /// Adds one class already read.
     pub fn add(&mut self, c: &ClassFile) {
-        self.insert(c.name.clone(), GameClass::of(c));
+        self.list(&c.name, OnceLock::from(Some(GameClass::of(c))));
     }
 
-    fn insert(&mut self, name: String, gc: GameClass) {
-        if let Some(r) = root_of(&name) {
+    fn list(&mut self, name: &str, cell: OnceLock<Option<GameClass>>) {
+        if let Some(r) = root_of(name) {
             self.roots.insert(r);
         }
-        self.classes.insert(name, gc);
+        self.classes.insert(name.to_string(), cell);
+    }
+
+    /// Is there a class file of this name? Without reading it.
+    pub fn contains(&self, class: &str) -> bool {
+        self.classes.contains_key(class)
+    }
+
+    /// What a class declares; `None` when there is no such class, or its file
+    /// cannot be read (then nothing can be said about what it declares).
+    pub fn get(&self, class: &str) -> Option<&GameClass> {
+        self.classes
+            .get(class)?
+            .get_or_init(|| {
+                let bytes = self
+                    .zip?
+                    .read(&format!("{class}.class"), CLASS_LIMIT)
+                    .ok()?;
+                class::parse(&bytes).ok().map(|c| GameClass::of(&c))
+            })
+            .as_ref()
     }
 
     /// Is this class in one of the game's own packages?
@@ -158,7 +179,7 @@ impl GameIndex {
 /// classes (a Mixin's interfaces and its own members are merged into its
 /// target: that is how Fabric API gives `BlockStateModel` its `emitQuads`).
 struct Env<'a> {
-    game: &'a GameIndex,
+    game: &'a GameIndex<'a>,
     /// the mod's and its bundled jars' own classes
     extra: HashMap<String, GameClass>,
     /// game class -> what Mixins add to it
@@ -167,7 +188,7 @@ struct Env<'a> {
 
 impl Env<'_> {
     fn declared(&self, c: &str) -> Option<&GameClass> {
-        self.game.classes.get(c).or_else(|| self.extra.get(c))
+        self.game.get(c).or_else(|| self.extra.get(c))
     }
 
     fn resolve(&self, r: &MemberRef) -> Found {
@@ -296,7 +317,6 @@ fn mixin_needs(
     let mut methods: Vec<&(String, String)> = Vec::new();
     for gc in env
         .game
-        .classes
         .get(target)
         .into_iter()
         .chain(env.added.get(target))
@@ -393,7 +413,7 @@ fn mixin_needs(
                         r.name,
                         r.descriptor
                     );
-                    if !env.game.classes.contains_key(&r.owner) {
+                    if !env.game.contains(&r.owner) {
                         missing(what);
                         continue;
                     }
@@ -483,9 +503,6 @@ const ADDS_NOTHING: [&str; 6] = [
     "mixinextras",
 ];
 
-/// Bundled jars nest (a jar in a jar in a jar): this deep is plenty.
-const MAX_NESTING: usize = 3;
-
 /// Every class file of `src` (multi-release copies under `META-INF/` left
 /// out), read on every core, in order.
 fn parse_all(src: &Source, files: &BTreeSet<String>) -> Vec<(String, Result<ClassFile, String>)> {
@@ -505,36 +522,12 @@ fn parse_all(src: &Source, files: &BTreeSet<String>) -> Vec<(String, Result<Clas
 /// The jars bundled in `src`: how many, their classes (read only when
 /// `classes`: in a set they are already in the context), and the mod ids
 /// they provide.
-fn bundled(src: &Source, files: &BTreeSet<String>, depth: usize, classes: bool, out: &mut Bundled) {
-    if depth >= MAX_NESTING {
-        return;
-    }
-    for jar in files
-        .iter()
-        .filter(|f| f.starts_with("META-INF/jars/") && f.ends_with(".jar"))
-    {
-        let Some(inner) = src
-            .read(jar)
-            .and_then(|b| kebitx_core::codec::zip::ZipArchive::from_bytes(b).ok())
-            .map(|z| Source::Zip(Box::new(z)))
-        else {
-            continue;
-        };
+fn bundled(src: &Source, files: &BTreeSet<String>, classes: bool, out: &mut Bundled) {
+    src.each_bundled(files, &mut |inner, inner_files| {
         out.jars += 1;
-        let inner_files = inner.files();
-        if let Some(meta) = inner
-            .read("fabric.mod.json")
-            .and_then(|b| kebitx_core::json::parse(&String::from_utf8_lossy(&b)).ok())
-        {
-            let id = meta.get("id").and_then(kebitx_core::json::Json::as_str);
-            let provides = meta
-                .get("provides")
-                .and_then(kebitx_core::json::Json::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(kebitx_core::json::Json::as_str);
-            out.ids
-                .extend(id.into_iter().chain(provides).map(str::to_string));
+        if let Some(m) = crate::meta::bundled_fabric(inner) {
+            out.ids.insert(m.id);
+            out.ids.extend(m.provides);
         }
         out.class_count += inner_files
             .iter()
@@ -542,13 +535,12 @@ fn bundled(src: &Source, files: &BTreeSet<String>, depth: usize, classes: bool, 
             .count();
         if classes {
             out.classes.extend(
-                parse_all(&inner, &inner_files)
+                parse_all(inner, inner_files)
                     .into_iter()
                     .filter_map(|(_, c)| c.ok()),
             );
         }
-        bundled(&inner, &inner_files, depth + 1, classes, out);
-    }
+    });
 }
 
 #[derive(Default)]
@@ -586,7 +578,7 @@ impl Context {
             start..self.classes.len(),
         ));
         let mut b = Bundled::default();
-        bundled(src, files, 0, true, &mut b);
+        bundled(src, files, true, &mut b);
         self.classes.extend(b.classes);
         self.ids.extend(b.ids);
         self.ids.extend(ids.iter().cloned());
@@ -650,7 +642,7 @@ pub fn check(
     let requires = crate::mixin::default_requires(src, files);
     let mut b = Bundled::default();
     // in a set, the bundled jars' classes are already in the context
-    bundled(src, files, 0, ctx.classes.is_empty(), &mut b);
+    bundled(src, files, ctx.classes.is_empty(), &mut b);
 
     let patches_game = matches!(loader, Some("Forge" | "NeoForge"));
     let external: Vec<String> = depends
@@ -727,9 +719,7 @@ pub fn check(
             .into_iter()
             // a missing owner is already a missing class
             .filter(|r| {
-                !r.owner.starts_with('[')
-                    && game.is_game(&r.owner)
-                    && game.classes.contains_key(&r.owner)
+                !r.owner.starts_with('[') && game.is_game(&r.owner) && game.contains(&r.owner)
             })
             .map(|r| (r.clone(), env.resolve(r)))
             .collect()
@@ -740,7 +730,7 @@ pub fn check(
             if !game.is_game(name) {
                 continue;
             }
-            if game.classes.contains_key(name.as_str()) {
+            if game.contains(name.as_str()) {
                 report.checked += 1;
             } else {
                 missing_classes
@@ -767,7 +757,7 @@ pub fn check(
                 if !game.is_game(&t) {
                     continue;
                 }
-                if game.classes.contains_key(&t) {
+                if game.contains(&t) {
                     report.checked += 1;
                     for f in mixin_needs(c, &t, &env, &requires, &mut report) {
                         findings.insert(match &may_come_from {
@@ -848,7 +838,7 @@ mod tests {
     use super::*;
     use crate::class::tests::Builder;
 
-    fn game() -> GameIndex {
+    fn game() -> GameIndex<'static> {
         let mut g = GameIndex::default();
         let mut entity = Builder::default();
         entity.methods.push(("tick".into(), "()V".into()));

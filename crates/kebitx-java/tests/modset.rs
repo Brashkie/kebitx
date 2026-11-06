@@ -116,3 +116,37 @@ fn what_the_loader_refuses_and_nothing_else() {
     assert_eq!(r.broken(), 4);
     assert_eq!(r.mods.len(), 7);
 }
+
+/// A class file of the game that cannot be read says nothing: code that uses
+/// it is not reported, and neither is the class called missing.
+#[test]
+fn an_unreadable_game_class_exists_and_proves_nothing() {
+    use kebitx_java::class::{MemberRef, RefKind};
+    use kebitx_java::code::{Found, GameIndex};
+    let dir = std::env::temp_dir().join(format!("kebitx-unreadable-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = jar(
+        &dir,
+        "game.jar",
+        &[("net/minecraft/Broken.class", b"no class")],
+    );
+    let zip = kebitx_core::codec::zip::ZipArchive::open(&path).unwrap();
+    let game = kebitx_java::JavaJar {
+        id: "x".into(),
+        format: 0,
+        exact: true,
+        zip,
+    };
+    let index = GameIndex::from_jar(&game);
+    assert!(index.contains("net/minecraft/Broken"));
+    assert!(index.is_game("net/minecraft/Other"));
+    assert!(index.get("net/minecraft/Broken").is_none());
+    let r = MemberRef {
+        kind: RefKind::Method,
+        owner: "net/minecraft/Broken".into(),
+        name: "tick".into(),
+        descriptor: "()V".into(),
+    };
+    assert_eq!(index.resolve(&r), Found::Unknown);
+}

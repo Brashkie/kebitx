@@ -16,7 +16,8 @@
 //! needs is therefore undone on its own.
 
 use crate::game::JavaJar;
-use crate::modset::{analyze_set, ModMeta, SetFinding, SetReport};
+use crate::meta::ModMeta;
+use crate::modset::{analyze_set, SetFinding, SetReport};
 use crate::version::Version;
 use std::collections::BTreeSet;
 use std::fs;
@@ -162,7 +163,7 @@ pub fn apply(dir: &Path, removals: &[Removal], jar: Option<&JavaJar>) -> Result<
         return Err("nothing to repair".into());
     }
     let dir = fs::canonicalize(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let dir = plain(dir);
+    let dir = kebitx_repair::apply::plain(dir);
     for r in removals {
         if r.jar.contains(['/', '\\']) || r.jar.contains("..") || !dir.join(&r.jar).is_file() {
             return Err(format!("{} is not a jar of {}", r.jar, dir.display()));
@@ -205,13 +206,4 @@ pub fn apply(dir: &Path, removals: &[Removal], jar: Option<&JavaJar>) -> Result<
         kept,
         backup,
     })
-}
-
-/// `\\?\C:\...` (what `canonicalize` gives on Windows) without its prefix.
-fn plain(p: PathBuf) -> PathBuf {
-    let s = p.to_string_lossy();
-    match s.strip_prefix(r"\\?\") {
-        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
-        _ => p,
-    }
 }

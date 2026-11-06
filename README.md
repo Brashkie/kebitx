@@ -131,7 +131,7 @@ Exit code 2 always means bad usage or a path that does not exist.
 ## Where it is going
 
 The long-term goal is a tool that goes from **detecting** problems to **diagnosing** them and
-**proposing verifiable repairs**, and to build add-ons, across six areas:
+**proposing verifiable repairs**, and to build add-ons, across these areas:
 
 | Area | What it means |
 |---|---|
@@ -142,6 +142,7 @@ The long-term goal is a tool that goes from **detecting** problems to **diagnosi
 | **Java → Bedrock migration** | Convert what can be converted, flag what cannot, and produce a task list for what needs rebuilding. Whole worlds stay with Chunker; kebitx checks what it produces |
 | **Java Edition (Phase 7, started)** | Analyse Java packs and mods for their own sake: broken models and textures (working today), mod bytecode checked against the installed game, loader dependencies, profiles (JFR, spark) attributed to mods. A runtime of its own with a JIT is research with conditions, not a plan |
 | **Building** | `kebitx build`: filters over a scratch copy, the analysis as a gate, export to the game's development folders or to `.mcpack` / `.mcaddon` |
+| **Applications (Phase 8, planned)** | Desktop, Android (APK) and tablet apps over the same engine through its C ABI. The interface technology will be decided by prototypes and measurements |
 
 The identity does not change along the way: **explain why something looks broken, never modify it
 blindly.** See [ROADMAP.md](ROADMAP.md) for the phases and their order.
@@ -730,7 +731,7 @@ as the specification allows; 41 of Bedrock's own textures needed one or the othe
 the game's PNGs, those 41 included, it gives the same RGBA pixels as javax.imageio, the JDK's
 own decoder.
 
-`cargo test --workspace` shows 178 green (in the pure and the native build) (plus the Zig consumer's own `zig build test`), among them the core's fixture tests, the repair tests, the migration tests and the builder's
+`cargo test --workspace` shows 183 green (in the pure and the native build) (plus the Zig consumer's own `zig build test`), among them the core's fixture tests, the repair tests, the migration tests and the builder's
 end-to-end tests (a real filter program, every export target, the safety rule). Fixture tests use an **empty** vanilla
 catalog, or a fake install built from `fixtures/fake_install`, so their verdict does not
 depend on which Minecraft is installed on the machine. That is also why `horse_pack_broken` is
@@ -818,9 +819,9 @@ and the real mods above:
 |---|---|---|
 | reading the classes from the `.jar` (warm cache, 1 core) | 1.24 s | 0.44 s |
 | DEFLATE + CRC-32 on the same 11 383 streams (1 core) | 701 ms | 334 ms |
-| the game's class index (all cores) | 430 ms | 182 ms |
-| `kebitx analyze` on a mods folder (4 mods) | 2.23 s | 0.64 s |
-| `kebitx analyze` on one mod (Sodium) | 1.07 s | 0.37 s |
+| the game's class index, built whole (all cores) | 430 ms | 182 ms, now lazy |
+| `kebitx analyze` on a mods folder (4 mods) | 2.23 s | 0.48 s |
+| `kebitx analyze` on one mod (Sodium) | 1.07 s | 0.17 s |
 
 Where the time went, and what fixed it:
 
@@ -839,13 +840,18 @@ Where the time went, and what fixed it:
 - **The game's index queued on one file handle, then built its tables in order.** Now the
   `.jar` is read into memory once (about 30 ms), and every core reads, decodes and builds the
   tables of its classes. Only the final inserts run in order: 350 ms → 182 ms.
+- **Then the whole index stopped being built.** A mod names a small part of the game, so the
+  index now lists the `.jar`'s names and reads a class the first time something asks about it.
+  A test checks every class of every installed game: its entry name is the class it holds.
+  One mod (Lithium): 316 → 165 ms. A mods folder: 635 → 477 ms, or 413 ms with the native
+  kernels.
 
 The reports are identical before and after: the same 3 refusals and 17 failures on the bad set,
 and the same 2982 and 3594 references for Sodium and Lithium.
 
 **Why not Zig, or C?** A native decoder was the obvious candidate, so every option was measured
 on exactly the same input: the 11 383 class files of the 26.3 `.jar`, each inflated to its
-known size and checked against its CRC-32. The benchmarks are `native/zig/bench-inflate` and
+known size and checked against its CRC-32. The benchmarks are `zig build bench-inflate` (in `native/zig/kebitx-native`) and
 `native/c/bench-inflate`; the C libraries were built with `zig cc -O3`.
 
 | Decoder | Language | Time | Speed |
@@ -897,6 +903,9 @@ How it fits together:
   built from Windows.
 - **The boundary:** `crates/kebitx-native` holds it, and it is the second crate with `unsafe`.
   Without the feature it holds nothing, and kebitx is pure Rust that needs no Zig.
+- **In the release:** since 2.5.0, the prebuilt CLI includes the kernels (28 KB more
+  on Windows) and `kebitx --version` says so. CI builds all 7 targets this way first. The C ABI
+  library stays pure Rust.
 - **The tests:** differential tests in `crates/kebitx-core/tests/native.rs` decode 150 DEFLATE and
   zlib streams from another compressor (`fixtures/deflate/streams.bin`, written by
   `zig build gen-streams`, the same bytes on every system) and every PNG filter case.
@@ -1005,7 +1014,6 @@ kebitx/
 │   ├── zig/
 │   │   ├── kebitx-native/  # the native kernels: Zig (PNG unfiltering, SIMD) + libdeflate, one static library
 │   │   ├── kebitx-check/   # the C ABI's reference consumer, in Zig
-│   │   ├── bench-inflate/  # Zig's DEFLATE decoder measured on kebitx's input
 │   │   └── cross/          # zig cc as the linker for Linux x86-64 / ARM64 builds
 │   └── c/
 │       ├── third_party/libdeflate/  # libdeflate 1.26, decompression side, unmodified (MIT)
@@ -1100,7 +1108,8 @@ that shows the case. Notable changes go in [CHANGELOG.md](CHANGELOG.md), under `
 
 ### Releasing
 
-1. Set the version in `Cargo.toml` (`[workspace.package]`).
+1. Set the version in `Cargo.toml` (`[workspace.package]`) and run `cargo check`, which updates
+   `Cargo.lock` (the release builds with `--locked`).
 2. Move the `Unreleased` notes in `CHANGELOG.md` to a new `## [X.Y.Z] - YYYY-MM-DD` section.
 3. Commit, then push a tag `vX.Y.Z`.
 

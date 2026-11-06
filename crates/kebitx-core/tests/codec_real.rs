@@ -46,3 +46,33 @@ fn every_jar_entry_and_every_png_in_it() {
         "{entries} entries, {pngs} PNG"
     );
 }
+
+/// Every texture of the installed Bedrock game decodes. The only ones it may
+/// refuse are files named `.png` that do not start with a PNG's signature
+/// (the game ships a few). Interlaced images and damaged ancillary chunks are
+/// in this set: decoding them is what this holds in place.
+#[test]
+fn every_bedrock_texture_decodes() {
+    let Some(install) = kebitx_core::vanilla::install_dir() else {
+        return;
+    };
+    let files = kebitx_core::vanilla::files::map_files(
+        &install,
+        |p| p.starts_with("textures/") && p.ends_with(".png"),
+        |_, b| {
+            let signature = b.starts_with(b"\x89PNG\r\n\x1a\n");
+            Some((signature, png::decode(b).map(|_| ()).err()))
+        },
+    );
+    let refused: Vec<String> = files
+        .iter()
+        .filter_map(|(name, (signature, error))| {
+            error
+                .as_ref()
+                .filter(|_| *signature)
+                .map(|e| format!("{name}: {e}"))
+        })
+        .collect();
+    assert!(refused.is_empty(), "{refused:#?}");
+    assert!(files.len() > 1000, "{} textures", files.len());
+}

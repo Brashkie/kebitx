@@ -64,3 +64,38 @@ fn every_installed_versions_own_assets_are_clean() {
     }
     eprintln!("{checked} version(s) checked");
 }
+
+/// The lazy index answers from names: every class file of the game must be
+/// the class its entry says, or a lookup would ask for the wrong one. Every
+/// class name the `.jar` holds must also be a readable class.
+#[test]
+fn every_class_of_the_game_is_found_by_its_entry_name() {
+    use kebitx_java::code::GameIndex;
+    let Some(java) = JavaAssets::discover() else {
+        return;
+    };
+    for (id, _) in java.installed() {
+        let Some(jar) = java.jar_by_id(&id, true) else {
+            continue;
+        };
+        let index = GameIndex::from_jar(&jar);
+        let names: Vec<&String> = jar
+            .zip
+            .names()
+            .filter(|n| n.ends_with(".class") && !n.starts_with("META-INF/"))
+            .collect();
+        assert!(names.len() > 1000, "{id}: {} classes", names.len());
+        for n in names {
+            let b = jar.zip.read(n, 16 * 1024 * 1024).unwrap();
+            let c = kebitx_java::class::parse(&b).unwrap_or_else(|e| panic!("{id} {n}: {e}"));
+            assert_eq!(format!("{}.class", c.name), *n, "{id}");
+            assert!(index.get(&c.name).is_some(), "{id}: {}", c.name);
+        }
+        let multi = jar
+            .zip
+            .names()
+            .filter(|n| n.ends_with(".class") && n.starts_with("META-INF/"))
+            .count();
+        assert_eq!(multi, 0, "{id}: multi-release classes are left out");
+    }
+}

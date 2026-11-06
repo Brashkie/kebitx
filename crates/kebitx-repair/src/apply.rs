@@ -117,7 +117,7 @@ fn write_changes(plan: &Plan) -> Result<(), String> {
 
 /// `canonicalize` on Windows answers `\\?\C:\...`; the same path without the
 /// prefix is what people read and type (and what `--undo` gets pasted).
-fn plain(p: PathBuf) -> PathBuf {
+pub fn plain(p: PathBuf) -> PathBuf {
     let s = p.to_string_lossy();
     match s.strip_prefix(r"\\?\") {
         Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),

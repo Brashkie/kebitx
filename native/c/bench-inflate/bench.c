@@ -1,6 +1,6 @@
 /*
  * bench-inflate (C): zlib or libdeflate on the same input as kebitx's Rust
- * decoder and Zig's (native/zig/bench-inflate), with the same checks: every
+ * decoder and Zig's (zig build bench-inflate), with the same checks: every
  * stream inflated to its known size, and its CRC-32 compared.
  *
  * Corpus: `count`, then per stream `packed_len`, `size`, `crc32` (u32

@@ -3,6 +3,7 @@
 //!   zig build                               # libkebitx_native (static): Zig kernels + libdeflate (C)
 //!   zig build test                          # unit tests (each kernel against its plain version)
 //!   zig build bench-unfilter --release=fast -- <unfilter_corpus.bin>
+//!   zig build bench-inflate --release=fast -- <corpus.bin>   # Zig std on the same input as every decoder
 //!
 //! Cargo builds the library through `crates/kebitx-native/build.rs` when
 //! kebitx is built with `--features native`, for the target Cargo builds for.
@@ -59,6 +60,16 @@ pub fn build(b: *std.Build) void {
     const run = b.addRunArtifact(bench);
     if (b.args) |args| run.addArgs(args);
     b.step("bench-unfilter", "Unfilter a corpus and time it").dependOn(&run.step);
+
+    const bench_inflate = b.addExecutable(.{
+        .name = "bench-inflate",
+        .root_source_file = b.path("src/bench_inflate.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_inflate = b.addRunArtifact(bench_inflate);
+    if (b.args) |args| run_inflate.addArgs(args);
+    b.step("bench-inflate", "Inflate a corpus with Zig's decoder and time it").dependOn(&run_inflate.step);
 
     const gen = b.addExecutable(.{
         .name = "gen-streams",

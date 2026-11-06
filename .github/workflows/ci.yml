@@ -175,3 +175,50 @@ jobs:
         run: cargo clippy --workspace --all-targets --features kebitx-core/native -- -D warnings
       - name: Every test with the native kernels
         run: cargo test --workspace --features kebitx-core/native --no-fail-fast
+
+  # the release's own builds, on the release's own runners: every target it
+  # ships must build and link with the native kernels, and give the same bytes
+  # as the Rust code, before a tag is ever pushed
+  release-targets:
+    name: Release build (${{ matrix.target }})
+    needs: fmt
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest }
+          - { target: x86_64-unknown-linux-gnu,   os: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu,  os: ubuntu-22.04-arm }
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-22.04,     musl: true }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-22.04-arm, musl: true }
+          - { target: aarch64-apple-darwin,       os: macos-15 }
+          # built on Apple Silicon: it links here, and does not run
+          - { target: x86_64-apple-darwin,        os: macos-15,         cross: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+      - name: musl tools
+        if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build the CLI with the native kernels
+        run: cargo build --release --locked -p kebitx-cli --features native --target ${{ matrix.target }}
+      - name: It runs, and says what it was built with
+        if: ${{ !matrix.cross }}
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/kebitx"
+          [[ "${{ matrix.target }}" == *windows* ]] && bin="$bin.exe"
+          "$bin" --version | grep -F "native kernels"
+          "$bin" analyze fixtures/horse_pack
+      - name: The native kernels against the Rust code, on this target
+        if: ${{ !matrix.cross }}
+        run: cargo test --release --locked -p kebitx-core --features native --test native --target ${{ matrix.target }}

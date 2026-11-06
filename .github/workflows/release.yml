@@ -2,8 +2,8 @@
 #   1. the tag must match the version in Cargo.toml, and CHANGELOG.md must have
 #      a section for it;
 #   2. every test runs again;
-#   3. the CLI (and the C ABI library where the target supports it) is built
-#      for each platform and packed with README, CHANGELOG, LICENSE and the C header;
+#   3. the CLI, with the native kernels (and the C ABI library where the target
+#      supports it, pure Rust) is built for each platform and packed with README, CHANGELOG, LICENSE and the C header;
 #   4. the release is created with the CHANGELOG section as its notes and a
 #      SHA256SUMS file. A tag with a suffix (`v2.1.0-rc.1`) is a pre-release.
 name: Release
@@ -84,8 +84,8 @@ jobs:
           # static binaries: any Linux, and Android from a terminal (Termux, adb shell)
           - { target: x86_64-unknown-linux-musl,  os: ubuntu-22.04,     ffi: false, musl: true }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-22.04-arm, ffi: false, musl: true }
-          - { target: aarch64-apple-darwin,       os: macos-latest,     ffi: true }
-          - { target: x86_64-apple-darwin,        os: macos-latest,     ffi: true }
+          - { target: aarch64-apple-darwin,       os: macos-15,         ffi: true }
+          - { target: x86_64-apple-darwin,        os: macos-15,         ffi: true }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -97,11 +97,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      # the CLI ships with the native kernels; Zig builds them for the target
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
       - name: musl tools
         if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build the CLI
-        run: cargo build --release --locked -p kebitx-cli --target ${{ matrix.target }}
+        run: cargo build --release --locked -p kebitx-cli --features native --target ${{ matrix.target }}
       - name: Build the C ABI library
         if: matrix.ffi
         run: cargo build --release --locked -p kebitx-ffi --target ${{ matrix.target }}
@@ -141,6 +145,7 @@ jobs:
           bin="target/${{ matrix.target }}/release/kebitx"
           [[ "${{ matrix.target }}" == *windows* ]] && bin="$bin.exe"
           "$bin" --version | grep -F "${{ needs.prepare.outputs.version }}"
+          "$bin" --version | grep -F "native kernels"
       - uses: actions/upload-artifact@v4
         with:
           name: kebitx-${{ matrix.target }}

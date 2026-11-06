@@ -65,52 +65,6 @@ fn stages() {
     );
 }
 
-/// The game's textures, phase by phase, on one core then on all of them:
-/// reading the files, inflating, the rest of decoding, hashing.
-#[test]
-#[ignore]
-fn bedrock_pixel_phases() {
-    let Some(install) = kebitx_core::vanilla::install_dir() else {
-        return;
-    };
-    let t = Instant::now();
-    let files = kebitx_core::vanilla::files::map_files(
-        &install,
-        |p| p.starts_with("textures/") && (p.ends_with(".png") || p.ends_with(".tga")),
-        |_, bytes| Some(bytes.to_vec()),
-    );
-    let read = t.elapsed();
-    let files: Vec<(String, Vec<u8>)> = files.into_iter().collect();
-    let total: usize = files.iter().map(|(_, b)| b.len()).sum();
-
-    let t = Instant::now();
-    let imgs: Vec<_> = files
-        .iter()
-        .filter_map(|(p, b)| kebitx_migrate::content::decode(p, b))
-        .collect();
-    let decode1 = t.elapsed();
-
-    let t = Instant::now();
-    let _ = kebitx_core::par::par_map(&files, |(p, b)| kebitx_migrate::content::decode(p, b));
-    let decode_all = t.elapsed();
-
-    let t = Instant::now();
-    for i in &imgs {
-        std::hint::black_box((
-            kebitx_migrate::content::hash(i),
-            kebitx_migrate::content::mask_hash(i),
-        ));
-    }
-    let hash1 = t.elapsed();
-    let px: usize = imgs.iter().map(|i| i.pixels.len()).sum();
-    eprintln!(
-        "{} textures, {:.1} MB in files, {:.1} MB of pixels\n  read (all cores): {read:?}\n  decode: 1 core {decode1:?}, all cores {decode_all:?}\n  hash + shape (1 core): {hash1:?}",
-        files.len(),
-        total as f64 / 1e6,
-        px as f64 / 1e6
-    );
-}
-
 /// Writes every 8-bit PNG of the game as its filtered rows (after inflating)
 /// to `KEBITX_UNFILTER_CORPUS`: `count`, then per image `width`, `height`,
 /// `bpp` (u32 little-endian) and `(stride + 1) * height` bytes. The same
@@ -224,29 +178,6 @@ fn unfilter_corpus() {
     );
 }
 
-/// `map_files` with more and more of `BedrockPixels`'s work per texture.
-#[test]
-#[ignore]
-fn bedrock_pixels_steps() {
-    use kebitx_migrate::content::{decode, hash, mask_hash};
-    let Some(install) = kebitx_core::vanilla::install_dir() else {
-        return;
-    };
-    let wanted =
-        |p: &str| p.starts_with("textures/") && (p.ends_with(".png") || p.ends_with(".tga"));
-    let step = |label: &str, f: &(dyn Fn(&str, &[u8]) -> Option<u64> + Sync)| {
-        let t = Instant::now();
-        let n = kebitx_core::vanilla::files::map_files(&install, wanted, |p, b| f(p, b)).len();
-        eprintln!("  {label}: {:?} ({n})", t.elapsed());
-    };
-    step("read only", &|_, b| Some(b.len() as u64));
-    step("+ decode", &|p, b| decode(p, b).map(|i| i.width as u64));
-    step("+ hash", &|p, b| decode(p, b).map(|i| hash(&i)));
-    step("+ shape", &|p, b| {
-        decode(p, b).map(|i| hash(&i) ^ mask_hash(&i).unwrap_or(0))
-    });
-}
-
 /// The game's PNGs by colour type and depth, and the time of each part of
 /// decoding them on one core: zlib, unfiltering, and the rest (chunks and
 /// the conversion to RGBA).
@@ -326,44 +257,6 @@ fn png_parts() {
         whole.saturating_sub(zlib + unfilter),
         kebitx_core::codec::NATIVE
     );
-}
-
-/// Which of the game's PNGs kebitx refuses, and why: the chunk whose CRC
-/// does not match, and whether it is critical (upper-case first letter).
-#[test]
-#[ignore]
-fn refused_pngs() {
-    let Some(install) = kebitx_core::vanilla::install_dir() else {
-        return;
-    };
-    let files = kebitx_core::vanilla::files::map_files(
-        &install,
-        |p| p.starts_with("textures/") && p.ends_with(".png"),
-        |_, b| Some(b.to_vec()),
-    );
-    let mut names: Vec<&String> = files.keys().collect();
-    names.sort();
-    for n in names {
-        let b = &files[n];
-        let Err(e) = kebitx_core::codec::png::decode(b) else {
-            continue;
-        };
-        let mut bad = Vec::new();
-        let mut at = 8;
-        while at + 12 <= b.len() {
-            let len = u32::from_be_bytes(b[at..at + 4].try_into().unwrap()) as usize;
-            if at + 12 + len > b.len() {
-                break;
-            }
-            let kind = String::from_utf8_lossy(&b[at + 4..at + 8]).to_string();
-            let crc = u32::from_be_bytes(b[at + 8 + len..at + 12 + len].try_into().unwrap());
-            if kebitx_core::codec::crc32(&b[at + 4..at + 8 + len]) != crc {
-                bad.push(kind);
-            }
-            at += 12 + len;
-        }
-        eprintln!("  {n}: {e}; chunks with a wrong CRC: {bad:?}");
-    }
 }
 
 /// Writes PNGs of the game to `KEBITX_DUMP` (every interlaced one, every one

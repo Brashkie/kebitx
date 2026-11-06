@@ -6,9 +6,9 @@
 //! one bit at a time (codes longer than that, rare by construction, and the
 //! last bits of a stream take `puff`'s path). The table only ever answers
 //! what the bit-by-bit decoder would, so errors are the same. On the game's
-//! 11 383 class files this took decoding from 85 to several hundred MB/s;
-//! Zig's own decoder, on the same input, ran at 81 MB/s
-//! (`native/zig/bench-inflate`): the gain was the algorithm, not the language.
+//! 11 383 class files this took decoding from 85 to 187 MB/s;
+//! Zig's own decoder, on the same input, ran at 82 MB/s
+//! (`zig build bench-inflate`): the gain was the algorithm, not the language.
 //!
 //! Every input is untrusted: every read is bounds checked, every table is
 //! validated before use, and the output stops at a caller-given limit (a few

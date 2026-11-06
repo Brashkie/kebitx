@@ -103,50 +103,9 @@ pub fn open(path: &Path) -> Result<Input, String> {
 
 /// A mod's loader and name, from its metadata file.
 pub fn mod_meta(root: &Path) -> Option<(&'static str, String)> {
-    let read = |p: &str| kebitx_core::filesystem::read_text(&root.join(p)).ok();
-    if let Some(t) = read("fabric.mod.json") {
-        let j = kebitx_core::json::parse(&t).ok();
-        let name = j
-            .as_ref()
-            .and_then(|j| j.get("name").or_else(|| j.get("id")))
-            .and_then(|v| v.as_str())
-            .unwrap_or("Fabric mod");
-        return Some(("Fabric", name.to_string()));
-    }
-    if let Some(t) = read("quilt.mod.json") {
-        let j = kebitx_core::json::parse(&t).ok();
-        let name = j
-            .as_ref()
-            .and_then(|j| j.get("quilt_loader"))
-            .and_then(|q| {
-                q.get("metadata")
-                    .and_then(|m| m.get("name"))
-                    .or_else(|| q.get("id"))
-            })
-            .and_then(|v| v.as_str())
-            .unwrap_or("Quilt mod");
-        return Some(("Quilt", name.to_string()));
-    }
-    for (file, loader) in [
-        ("META-INF/neoforge.mods.toml", "NeoForge"),
-        ("META-INF/mods.toml", "Forge"),
-    ] {
-        if let Some(t) = read(file) {
-            // TOML: the first `displayName = "..."`
-            let name = t
-                .lines()
-                .find_map(|l| {
-                    l.trim().strip_prefix("displayName").map(|r| {
-                        r.trim_start_matches([' ', '='])
-                            .trim_matches('"')
-                            .to_string()
-                    })
-                })
-                .unwrap_or_else(|| format!("{loader} mod"));
-            return Some((loader, name));
-        }
-    }
-    None
+    let m = kebitx_java::meta::read(&kebitx_java::Source::Dir(root.to_path_buf()))?;
+    let name = m.display_name();
+    Some((m.loader, name))
 }
 
 #[cfg(test)]

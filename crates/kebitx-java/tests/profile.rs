@@ -96,7 +96,7 @@ fn stages() {
 /// Writes every class entry of the game's `.jar` as stored (raw DEFLATE) to
 /// `KEBITX_CORPUS`: `count`, then per entry `packed_len`, `size`, `crc32`
 /// (u32 little-endian) and the bytes. The same input for every decoder
-/// measured (`native/zig/bench-inflate`).
+/// measured (`zig build bench-inflate`).
 #[test]
 #[ignore]
 fn write_inflate_corpus() {
@@ -169,112 +169,5 @@ fn write_inflate_corpus() {
         (buf.len() - 4) as f64 / 1e6,
         total as f64 / 1e6,
         total as f64 / 1e6 / el.as_secs_f64()
-    );
-}
-
-/// `GameIndex::from_jar`, phase by phase: what a faster decoder could win.
-#[test]
-#[ignore]
-fn index_phases() {
-    let Some(java) = JavaAssets::discover() else {
-        return;
-    };
-    let jar = java.jar_for(None).unwrap();
-    let names: Vec<&String> = jar.zip.names().filter(|n| n.ends_with(".class")).collect();
-
-    let t = Instant::now();
-    let raw: Vec<(u64, Vec<u8>)> = names
-        .iter()
-        .map(|n| {
-            let (_, size, _, b) = jar.zip.read_raw(n, 16 << 20).unwrap();
-            (size, b)
-        })
-        .collect();
-    let io = t.elapsed();
-
-    let t = Instant::now();
-    let inflated = kebitx_core::par::par_map(&raw, |(size, b)| {
-        kebitx_core::codec::inflate::inflate(b, *size as usize)
-            .unwrap()
-            .0
-    });
-    let inflate = t.elapsed();
-
-    let t = Instant::now();
-    let parsed = kebitx_core::par::par_map(&inflated, |b| kebitx_java::class::parse(b).unwrap());
-    let parse = t.elapsed();
-
-    let t = Instant::now();
-    let mut g = GameIndex::default();
-    for c in &parsed {
-        g.add(c);
-    }
-    let add = t.elapsed();
-
-    let t = Instant::now();
-    let _ = GameIndex::from_jar(&jar);
-    let whole = t.elapsed();
-    eprintln!(
-        "index of {} classes on {} threads: read (serial) {io:?}, inflate (parallel) {inflate:?}, parse (parallel) {parse:?}, add (serial) {add:?}; from_jar as is: {whole:?}",
-        names.len(),
-        kebitx_core::par::threads()
-    );
-}
-
-/// Every PNG of the game's `.jar`: the whole decode, and the zlib part of it
-/// alone (the IDAT stream). What a faster DEFLATE decoder would change.
-#[test]
-#[ignore]
-fn png_decoding() {
-    let Some(java) = JavaAssets::discover() else {
-        return;
-    };
-    let jar = java.jar_for(None).unwrap();
-    let mem = jar.zip.in_memory().unwrap();
-    let files: Vec<Vec<u8>> = mem
-        .names()
-        .filter(|n| n.ends_with(".png"))
-        .map(|n| mem.read(n, 64 << 20).unwrap())
-        .collect();
-
-    // the IDAT streams, concatenated per image
-    let idats: Vec<Vec<u8>> = files
-        .iter()
-        .map(|b| {
-            let (mut at, mut idat) = (8usize, Vec::new());
-            while at + 8 <= b.len() {
-                let len = u32::from_be_bytes(b[at..at + 4].try_into().unwrap()) as usize;
-                if &b[at + 4..at + 8] == b"IDAT" {
-                    idat.extend_from_slice(&b[at + 8..at + 8 + len]);
-                }
-                at += 12 + len;
-            }
-            idat
-        })
-        .collect();
-
-    let t = Instant::now();
-    let mut pixels = 0usize;
-    for b in &files {
-        if let Ok(img) = kebitx_core::codec::png::decode(b) {
-            pixels += img.pixels.len();
-        }
-    }
-    let whole = t.elapsed();
-
-    let t = Instant::now();
-    let mut out = 0usize;
-    for d in &idats {
-        if let Ok(o) = kebitx_core::codec::zlib_decompress(d, 256 << 20) {
-            out += o.len();
-        }
-    }
-    let zlib = t.elapsed();
-    eprintln!(
-        "{} PNGs, {:.1} MB of pixels: whole decode {whole:?}; zlib part {zlib:?} ({:.0} %, {:.1} MB inflated)",
-        files.len(),
-        pixels as f64 / 1e6,
-        zlib.as_secs_f64() / whole.as_secs_f64() * 100.0,
-        out as f64 / 1e6
     );
 }

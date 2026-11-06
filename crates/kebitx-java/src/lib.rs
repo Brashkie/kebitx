@@ -3,12 +3,14 @@
 //! `game`: the installed Java game (its launcher folder, asset index and
 //! version `.jar`s), the reference every verdict is proven against.
 //! `source`: what is analysed — a folder, or a `.jar` / `.zip` read in place.
+//! `meta`: what a mod declares, for every loader.
 //! `analyze`: static analysis of resource packs and mods.
 
 pub mod analyze;
 pub mod class;
 pub mod code;
 pub mod game;
+pub mod meta;
 pub mod mixin;
 pub mod modset;
 pub mod repair;

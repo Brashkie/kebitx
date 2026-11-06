@@ -106,92 +106,76 @@ impl JavaAssets {
     /// As `jar_for`, for a pack that declares a range of formats
     /// (`min_format` .. `max_format`): the newest installed version inside it.
     pub fn jar_in(&self, formats: Option<(u32, u32)>) -> Option<JavaJar> {
-        let mut found: Vec<(String, u32, bool, String, ZipArchive)> = Vec::new();
-        for e in std::fs::read_dir(self.dir.join("versions")).ok()?.flatten() {
-            let id = e.file_name().to_string_lossy().to_string();
-            let Ok(zip) = ZipArchive::open(&e.path().join(format!("{id}.jar"))) else {
-                continue;
-            };
-            let Some(v) = zip
-                .read("version.json", 1024 * 1024)
-                .ok()
-                .and_then(|b| json::parse(&String::from_utf8_lossy(&b)).ok())
-            else {
-                continue;
-            };
-            let pv = v.get("pack_version");
-            let format = pv
-                .and_then(|p| p.get("resource_major").or_else(|| p.get("resource")))
-                .or(pv.filter(|p| matches!(p, Json::Num(_))));
-            let Some(Json::Num(format)) = format else {
-                continue;
-            };
-            let stable = matches!(v.get("stable"), Some(Json::Bool(true)));
-            let built = v
-                .get("build_time")
-                .and_then(Json::as_str)
-                .unwrap_or("")
-                .to_string();
-            found.push((id, *format as u32, stable, built, zip));
-        }
-        let exact = formats.and_then(|(min, max)| {
-            let i = found
+        let mut found: Vec<Installed> = self
+            .every_version()
+            .into_iter()
+            .filter(|v| v.format.is_some())
+            .collect();
+        let newest = |found: &[Installed], keep: &dyn Fn(&Installed) -> bool| {
+            found
                 .iter()
                 .enumerate()
-                .filter(|(_, j)| (min..=max).contains(&j.1))
-                .max_by(|a, b| a.1 .3.cmp(&b.1 .3))?
-                .0;
-            Some(found.swap_remove(i))
+                .filter(|(_, v)| keep(v))
+                .max_by(|a, b| a.1.built.cmp(&b.1.built))
+                .map(|(i, _)| i)
+        };
+        let inside = formats.and_then(|(min, max)| {
+            newest(&found, &|v| {
+                v.format.is_some_and(|f| (min..=max).contains(&f))
+            })
         });
-        let (pick, is_exact) = match exact {
-            Some(j) => (j, true),
-            None => {
-                let i = found
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, j)| j.2)
-                    .max_by(|a, b| a.1 .3.cmp(&b.1 .3))?
-                    .0;
-                (found.swap_remove(i), false)
-            }
+        let (pick, exact) = match inside {
+            Some(i) => (found.swap_remove(i), true),
+            None => (found.swap_remove(newest(&found, &|v| v.stable)?), false),
         };
         Some(JavaJar {
-            id: pick.0,
-            format: pick.1,
-            exact: is_exact,
-            zip: pick.4,
+            id: pick.id,
+            format: pick.format.unwrap_or(0),
+            exact,
+            zip: pick.zip,
         })
     }
 
     /// Every installed version with a `.jar`: `(id, stable)`, newest first
     /// (by the build time its `version.json` declares).
     pub fn installed(&self) -> Vec<(String, bool)> {
-        let mut out: Vec<(String, bool, String)> = Vec::new();
+        let mut all = self.every_version();
+        all.sort_by(|a, b| b.built.cmp(&a.built));
+        all.into_iter().map(|v| (v.id, v.stable)).collect()
+    }
+
+    /// Every version folder with a `.jar` that says what it is.
+    fn every_version(&self) -> Vec<Installed> {
         let Ok(entries) = std::fs::read_dir(self.dir.join("versions")) else {
             return Vec::new();
         };
-        for e in entries.flatten() {
-            let id = e.file_name().to_string_lossy().to_string();
-            let Ok(zip) = ZipArchive::open(&e.path().join(format!("{id}.jar"))) else {
-                continue;
-            };
-            let Some(v) = zip
-                .read("version.json", 1024 * 1024)
-                .ok()
-                .and_then(|b| json::parse(&String::from_utf8_lossy(&b)).ok())
-            else {
-                continue;
-            };
-            let stable = matches!(v.get("stable"), Some(Json::Bool(true)));
-            let built = v
-                .get("build_time")
-                .and_then(Json::as_str)
-                .unwrap_or("")
-                .to_string();
-            out.push((id, stable, built));
-        }
-        out.sort_by(|a, b| b.2.cmp(&a.2));
-        out.into_iter().map(|(id, s, _)| (id, s)).collect()
+        entries
+            .flatten()
+            .filter_map(|e| {
+                let id = e.file_name().to_string_lossy().to_string();
+                let zip = ZipArchive::open(&e.path().join(format!("{id}.jar"))).ok()?;
+                let bytes = zip.read("version.json", 1024 * 1024).ok()?;
+                let v = json::parse(&String::from_utf8_lossy(&bytes)).ok()?;
+                let pv = v.get("pack_version");
+                let format = pv
+                    .and_then(|p| p.get("resource_major").or_else(|| p.get("resource")))
+                    .or(pv.filter(|p| matches!(p, Json::Num(_))));
+                Some(Installed {
+                    format: match format {
+                        Some(Json::Num(f)) => Some(*f as u32),
+                        _ => None,
+                    },
+                    stable: matches!(v.get("stable"), Some(Json::Bool(true))),
+                    built: v
+                        .get("build_time")
+                        .and_then(Json::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    id,
+                    zip,
+                })
+            })
+            .collect()
     }
 
     /// One installed version by its id (`26.2`), if its `.jar` is there.
@@ -228,6 +212,16 @@ impl JavaAssets {
         }
         self.jar_by_id(bare, true)
     }
+}
+
+/// What a version's `version.json` says, with its open `.jar`.
+struct Installed {
+    id: String,
+    /// The resource pack format it declares.
+    format: Option<u32>,
+    stable: bool,
+    built: String,
+    zip: ZipArchive,
 }
 
 /// One installed Java version's client `.jar`: the game's own textures and

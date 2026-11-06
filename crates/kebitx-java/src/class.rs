@@ -365,7 +365,6 @@ pub(crate) mod tests {
         pub fields: Vec<(String, String)>,
         pub methods: Vec<(String, String)>,
         pub interfaces: Vec<String>,
-        refs: Vec<u16>,
         annotations: Vec<Vec<u8>>,
         /// (is a method, index) -> its annotations
         member_annotations: std::collections::HashMap<(bool, usize), Vec<Vec<u8>>>,
@@ -457,8 +456,7 @@ pub(crate) mod tests {
             let mut e = vec![tag];
             e.extend(c.to_be_bytes());
             e.extend(nat.to_be_bytes());
-            let i = self.add(e);
-            self.refs.push(i);
+            self.add(e);
         }
         /// `@Mixin(targets = {...})` on the class.
         pub fn mixin_targets(&mut self, targets: &[&str]) {
@@ -542,7 +540,6 @@ pub(crate) mod tests {
                 b.extend((body.len() as u32).to_be_bytes());
                 b.extend(body);
             }
-            let _ = &self.refs;
             b
         }
     }

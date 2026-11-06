@@ -7,6 +7,52 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-05
+
+Analysing a mod takes about half the time, because the game's classes are now read only when
+asked for. The prebuilt CLI ships with the native kernels, and CI builds every release target
+with them first. Metadata reading is now one module, which fixed several small errors in how
+mods are read. Reports on the real mods tested are unchanged.
+
+### Changed
+
+- **The game's class index is lazy.** It lists the `.jar`'s names and reads a class the first
+  time something asks about it, because a mod names a small part of the game.
+  `kebitx analyze` on one mod: 316 → 165 ms. On a mods folder (4 mods): 635 → 477 ms.
+- **The release's CLI ships with the native kernels**, with Zig building them for each target.
+  The binary grows by 28 KB on Windows, and `kebitx --version` says when they are built in. The
+  C ABI library stays pure Rust. Its macOS builds move to `macos-15`.
+- **`zig build bench-inflate`** in `native/zig/kebitx-native` replaces the separate
+  `native/zig/bench-inflate` project.
+
+### Added
+
+- **CI:** a `release-targets` job builds the CLI with the native kernels for all 7 release
+  targets, on the release's own runners. Where the binary can run, it also runs the differential
+  tests, so a problem shows up before a tag is pushed.
+- **`every_bedrock_texture_decodes`:** a test that every texture of the installed Bedrock game
+  with a PNG signature decodes.
+
+### Fixed
+
+- **`mods.toml` values:** single-quoted values are read, and multi-line strings are skipped, so
+  a `description` line that looks like a table or a key no longer breaks the metadata.
+- **False "missing dependency" reports:** every `[[mods]]` of a jar now counts as provided, not
+  only the first. So does Quilt's `provides`.
+- **Jars for several loaders:** when the first metadata file is malformed, the next one that can
+  be read is used.
+- **`kebitx migrate`:** a comment after `displayName` no longer ends up in the mod's name.
+- **An unreadable class of the game:** it now counts as existing, and what it declares is
+  unknown. It was reported as a missing class.
+
+### Internal
+
+- **`kebitx_java::meta`** is the one reader of mod metadata, replacing three. `Source::each_bundled`
+  is the one walk over bundled jars, replacing two.
+- **`ModFolder`** opens a folder once, so the CLI no longer reads every mod's metadata twice.
+- **The Java commands** moved out of `main.rs` into `crates/kebitx-cli/src/java.rs`.
+- **Removed:** profiling tests that have served their purpose, and other leftovers.
+
 ## [2.3.0] - 2026-11-05
 
 C and Zig join the engine, where measurement shows they pay, as optional native kernels for
@@ -293,7 +339,8 @@ packs and mods to Bedrock. It is written in Rust with the standard library only.
 - Java shaders have no general Bedrock equivalent.
 - The tests were run on Windows by the author. Linux and macOS are covered by CI.
 
-[Unreleased]: https://github.com/Brashkie/kebitx/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/Brashkie/kebitx/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/Brashkie/kebitx/compare/v2.3.0...v2.5.0
 [2.3.0]: https://github.com/Brashkie/kebitx/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Brashkie/kebitx/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Brashkie/kebitx/compare/v2.0.0...v2.1.0

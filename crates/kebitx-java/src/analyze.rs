@@ -128,183 +128,22 @@ impl JavaReport {
 
 /// What a source is: a mod (by its metadata), a resource pack, or bare assets.
 pub fn kind_of(src: &Source, files: &BTreeSet<String>) -> Kind {
-    let text = |name: &str| {
-        src.read(name)
-            .map(|b| String::from_utf8_lossy(&b).to_string())
-    };
-    // a version requirement: a string, or a list of alternatives
-    let versions = |v: Option<&Json>| match v? {
-        Json::Str(s) => Some(s.clone()),
-        Json::Arr(a) => {
-            let all: Vec<&str> = a.iter().filter_map(Json::as_str).collect();
-            (!all.is_empty()).then(|| all.join(" || "))
-        }
-        _ => None,
-    };
-    if let Some(t) = text("fabric.mod.json") {
-        let j = json::parse(&t).ok();
-        let j = j.as_ref();
+    if let Some(m) = crate::meta::read(src) {
         return Kind::Mod {
-            loader: "Fabric",
-            ids: j
-                .and_then(|j| j.get("id").and_then(Json::as_str))
-                .map(str::to_string)
-                .into_iter()
-                .collect(),
-            minecraft: versions(j.and_then(|j| j.get("depends")?.get("minecraft"))),
-            depends: j
-                .and_then(|j| j.get("depends")?.as_object())
-                .map(|o| o.keys().cloned().collect())
-                .unwrap_or_default(),
+            loader: m.loader,
+            ids: m.ids,
+            minecraft: m.minecraft,
+            depends: m.named,
         };
-    }
-    if let Some(t) = text("quilt.mod.json") {
-        let j = json::parse(&t).ok();
-        let q = j.as_ref().and_then(|j| j.get("quilt_loader"));
-        let minecraft = q
-            .and_then(|q| q.get("depends"))
-            .and_then(Json::as_array)
-            .into_iter()
-            .flatten()
-            .find(|d| d.get("id").and_then(Json::as_str) == Some("minecraft"))
-            .and_then(|d| versions(d.get("versions")));
-        let depends = q
-            .and_then(|q| q.get("depends"))
-            .and_then(Json::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|d| d.as_str().or_else(|| d.get("id").and_then(Json::as_str)))
-            .map(str::to_string)
-            .collect();
-        return Kind::Mod {
-            loader: "Quilt",
-            ids: q
-                .and_then(|q| q.get("id").and_then(Json::as_str))
-                .map(str::to_string)
-                .into_iter()
-                .collect(),
-            minecraft,
-            depends,
-        };
-    }
-    for (file, loader) in [
-        ("META-INF/neoforge.mods.toml", "NeoForge"),
-        ("META-INF/mods.toml", "Forge"),
-    ] {
-        if let Some(t) = text(file) {
-            return Kind::Mod {
-                loader,
-                ids: toml_mod_ids(&t),
-                minecraft: toml_minecraft_range(&t),
-                depends: toml_dependency_ids(&t),
-            };
-        }
     }
     if files.contains("pack.mcmeta") {
         return Kind::ResourcePack {
-            formats: text("pack.mcmeta").and_then(|t| pack_formats(&t)),
+            formats: src
+                .read("pack.mcmeta")
+                .and_then(|b| pack_formats(&String::from_utf8_lossy(&b))),
         };
     }
     Kind::Assets
-}
-
-/// The `modId` of every `[[dependencies.<id>]]` table.
-pub fn toml_dependency_ids(t: &str) -> Vec<String> {
-    let mut in_dep = false;
-    let mut out = Vec::new();
-    for l in t.lines().map(str::trim) {
-        if l.starts_with('[') {
-            let head = l.split('#').next().unwrap_or("").trim();
-            in_dep = head
-                .trim_start_matches('[')
-                .trim_end_matches(']')
-                .starts_with("dependencies");
-            continue;
-        }
-        if !in_dep {
-            continue;
-        }
-        if let Some(v) = l
-            .strip_prefix("modId")
-            .and_then(|r| r.trim_start().strip_prefix('='))
-        {
-            let v = v
-                .split('#')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .trim_matches(['"', '\'']);
-            if !v.is_empty() && !out.iter().any(|o| o == v) {
-                out.push(v.to_string());
-            }
-        }
-    }
-    out
-}
-
-/// The `versionRange` of the `[[dependencies.<id>]]` table whose `modId` is
-/// `minecraft`.
-pub fn toml_minecraft_range(t: &str) -> Option<String> {
-    let value = |l: &str, key: &str| -> Option<String> {
-        let v = l.strip_prefix(key)?.trim_start().strip_prefix('=')?;
-        let v = v.split('#').next()?.trim().trim_matches(['"', '\'']);
-        Some(v.to_string())
-    };
-    let (mut in_dep, mut id, mut range) = (false, None, None);
-    for l in t.lines().map(str::trim).chain(["[end]"]) {
-        if l.starts_with('[') {
-            if in_dep && id.as_deref() == Some("minecraft") && range.is_some() {
-                return range;
-            }
-            let head = l.split('#').next().unwrap_or("").trim();
-            in_dep = head
-                .trim_start_matches('[')
-                .trim_end_matches(']')
-                .starts_with("dependencies");
-            (id, range) = (None, None);
-            continue;
-        }
-        if in_dep {
-            id = id.or_else(|| value(l, "modId"));
-            range = range.or_else(|| value(l, "versionRange"));
-        }
-    }
-    None
-}
-
-/// The `modId` of every `[[mods]]` table of a `mods.toml`. The same key in
-/// `[[dependencies.<id>]]` names the mods it NEEDS (`neoforge`, `minecraft`):
-/// those are not its own.
-pub fn toml_mod_ids(t: &str) -> Vec<String> {
-    let mut in_mods = false;
-    let mut out = Vec::new();
-    for l in t.lines() {
-        let l = l.trim();
-        if l.starts_with('[') {
-            let head = l.split('#').next().unwrap_or("").trim();
-            in_mods = head.trim_start_matches('[').trim_end_matches(']').trim() == "mods";
-            continue;
-        }
-        if !in_mods {
-            continue;
-        }
-        let Some(rest) = l.strip_prefix("modId") else {
-            continue;
-        };
-        let Some(v) = rest.trim_start().strip_prefix('=') else {
-            continue;
-        };
-        let v = v
-            .split('#')
-            .next()
-            .unwrap_or("")
-            .trim()
-            .trim_matches(['"', '\'']);
-        if !v.is_empty() {
-            out.push(v.to_string());
-        }
-    }
-    out
 }
 
 /// The resource pack formats a `pack.mcmeta` declares, as `(min, max)`:
@@ -943,23 +782,6 @@ pub fn analyze_in(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_the_mods_tables_name_the_mod() {
-        let t = r#"
-modLoader="javafml"
-[[mods]] # the mod
-modId="farmersdelight"
-displayName="Farmer's Delight"
-[[dependencies.farmersdelight]]
-    modId="neoforge"
-[[dependencies.farmersdelight]]
-    modId = "minecraft"
-    versionRange = "[1.21.1]" # exact
-"#;
-        assert_eq!(toml_mod_ids(t), ["farmersdelight"]);
-        assert_eq!(toml_minecraft_range(t).as_deref(), Some("[1.21.1]"));
-    }
 
     #[test]
     fn format_ranges_in_every_form() {

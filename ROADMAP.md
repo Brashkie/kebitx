@@ -1,6 +1,6 @@
 # Kebitx roadmap
 
-Seven phases, plus tracks that run alongside them: platforms, building add-ons and security. Each one
+Eight phases, plus tracks that run alongside them: platforms, building add-ons and security. Each one
 keeps the same rule as today: **nothing is declared broken without enough evidence**, and every
 new capability arrives with fixtures that reproduce a real case.
 
@@ -265,7 +265,7 @@ With mobile devices as the reference target.
   `-C link-self-contained=no` so Rust's and Zig's start files do not collide), 1.6 MB, the kind
   of binary Termux or `adb shell` run. Built and checked as a static ARM64 executable; not yet
   run on a phone
-- [ ] Optional desktop interface
+- [ ] Optional desktop interface: now part of Phase 8
 - [ ] Integration with modeling tools (Blockbench)
 - [ ] An extensible system of rules and adapters
 - [x] The analysis as a standalone step other build tools can call at the end of their
@@ -366,6 +366,29 @@ allocation — what Sodium, Lithium or FerriteCore improve from inside Java. Tak
 - measured FPS, tick time and memory beat HotSpot on the same machine;
 - every behaviour it changes can be checked. Until then it is not on the plan.
 
+## Phase 8 — Applications: desktop, Android, tablet
+
+Kebitx with a window, for people who do not use a terminal. The engine stays one: the apps show
+what it proves and hold no rules of their own. Repairs stay as they are in the CLI: a preview
+first, a backup, and an undo.
+
+The language follows the same rule as the rest of the project: C, C++ or whatever helps, chosen
+by what it brings and measured, with the engine behind the C ABI.
+
+- [ ] The whole engine through the C ABI. `kebitx-ffi` only exposes the analysis today; the apps
+  need Java analysis, compare, repair, migrate and build, with progress and cancellation
+- [ ] The interface technology, decided with a small prototype of each candidate (Qt in C++,
+  Dear ImGui, Kotlin on Android over JNI): binary size, start-up, memory on a real tablet, and how
+  much code the systems can share. The decision and its numbers are written here
+- [ ] Desktop first (Windows, Linux, macOS): open a pack, a mod or a mods folder, read the
+  report, preview a repair, apply it, undo it
+- [ ] The engine as an Android library: `.so` files built with the NDK. `aarch64-linux-android`
+  already compiles in CI; the native kernels need that target added to their build
+- [ ] Android storage, checked on a real device before any screen is designed: what an app can
+  read of the game's folders, and what must go through the system's file picker
+- [ ] APK, with layouts for phone and tablet
+- [ ] Tablet and phone performance measured on real devices, large packs included
+
 ## Platforms
 
 - [x] Windows, Linux, macOS, Android: what is Windows-only (registry, package manager) is
@@ -443,7 +466,7 @@ change only if the report stays byte-for-byte the same.
   - **Why no C:** libdeflate would save about 36 ms of the 350 ms index, because decoding
     already runs on every core. That is not worth a C toolchain on 7 targets. The serial
     phases, fixed in Rust, saved 170 ms.
-  - **The benchmarks stay:** `native/zig/bench-inflate` and `native/c/bench-inflate`.
+  - **The benchmarks stay:** `zig build bench-inflate` and `native/c/bench-inflate`.
 - [x] Native kernels where pictures are decoded (`--features native`, `crates/kebitx-native`,
   `native/zig/kebitx-native`):
   - **The kernels:** libdeflate (C, vendored unmodified) for DEFLATE and zlib, and a Zig `@Vector`
@@ -479,10 +502,15 @@ change only if the report stays byte-for-byte the same.
   native job on `macos-15` meanwhile). Moving means porting the three `build.zig` and the
   Zig sources to the new standard library (`std.compress.flate` and `std.io` changed), and
   checking that `fixtures/deflate/streams.bin` stays byte for byte the same
-- [ ] Next measured candidates:
+- [x] The game's class index is lazy: it lists the `.jar`'s names and reads a class the first time
+  something asks about it. One mod 316 → 165 ms, a mods folder 635 → 477 ms, reports unchanged.
+  This replaces the idea of keeping the index on disk.
+- [x] The native kernels in the release's CLI, with a CI job that builds all 7 targets and runs the
+  differential tests where the binary can run. +28 KB on Windows; a mods folder 477 → 413 ms
+- [ ] Next candidates, to be measured first:
   - `kebitx migrate`: reading the pack in place instead of extracting it (0.95 s left);
-  - the native kernels in the release binaries, once CI has run them on every system;
-  - the game's class index on disk, as the Bedrock catalog is (≈180 ms per run).
+  - a mods folder: each mod's classes are parsed for the context and again for its own check;
+  - DEFLATE: a fast decoding loop in Rust, against libdeflate's 3.2×.
 
 ## Security — hardening against hostile input
 

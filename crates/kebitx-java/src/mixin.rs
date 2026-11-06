@@ -18,6 +18,7 @@
 
 use crate::class::{Annotation, ClassFile, Member, MemberRef, RefKind, Value};
 use crate::source::Source;
+use kebitx_core::json::Json;
 use std::collections::{BTreeSet, HashMap};
 
 const SHADOW: &str = "Lorg/spongepowered/asm/mixin/Shadow;";
@@ -100,20 +101,20 @@ pub fn default_requires(src: &Source, files: &BTreeSet<String>) -> HashMap<Strin
         else {
             continue;
         };
-        let Some(package) = j.get("package").and_then(kebitx_core::json::Json::as_str) else {
+        let Some(package) = j.get("package").and_then(Json::as_str) else {
             continue;
         };
         let require = match j.get("injectors").and_then(|i| i.get("defaultRequire")) {
-            Some(kebitx_core::json::Json::Num(n)) => *n as i64,
+            Some(Json::Num(n)) => *n as i64,
             _ => 0,
         };
         for list in ["mixins", "client", "server"] {
             for m in j
                 .get(list)
-                .and_then(kebitx_core::json::Json::as_array)
+                .and_then(Json::as_array)
                 .into_iter()
                 .flatten()
-                .filter_map(kebitx_core::json::Json::as_str)
+                .filter_map(Json::as_str)
             {
                 out.insert(format!("{package}.{m}").replace('.', "/"), require);
             }
