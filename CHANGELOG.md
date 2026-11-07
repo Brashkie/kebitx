@@ -7,6 +7,105 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-11-06
+
+kebitx now holds no third-party code, and has a first desktop app. libdeflate and every crate are
+gone: DEFLATE is kebitx's own decoder, in safe Rust. The Windows archive comes with an app in C, with
+no toolkit and in seven languages: it finds what is on your computer, reports it grouped by what to
+fix, repairs with a preview and an undo, and makes a pack or a world one file for the game. Behavior
+packs are checked now, not only resource packs, and a world is read as the game loads it. Bedrock
+worlds can be inspected with kebitx's own reader of the game's database, the first step to converting
+worlds with no other tool. Against 2.5.0's binaries, which used libdeflate, speed is about the same.
+
+### Changed
+
+- **No third-party code.** `Cargo.lock` went from 82 packages to kebitx's own 9, and `native/c`
+  is gone. kebitx holds only its own code.
+- **DEFLATE and zlib are kebitx's own decoder** in every build, with no `unsafe`: 187 → 313 MB/s on
+  the game's class files, with the CRC-32 check, against kebitx's previous decoder. Against the
+  libdeflate build that 2.5.0 shipped: `analyze` on Sodium about the same (152 and 155 ms), a mods
+  folder 4 % slower at most (424 and 407 ms), and `migrate` on Faithful 32x 4 % slower (3.21 and
+  3.09 s).
+- **The prebuilt CLI is pure Rust again**, and building it needs no Zig. The Zig PNG kernel is
+  faster in isolation, but on whole commands it takes the same time. It stays behind
+  `--features native`, and `kebitx --version` says when it is built in.
+- **Nothing to install on Windows:** the CLI and the C ABI library carry the C runtime inside, and
+  no longer ask for `VCRUNTIME140.dll`.
+- **`kebitx analyze` on a folder that holds no pack, world or mods is now an error** (exit code 2). It
+  used to print "OK": a script pointed at the wrong folder must not pass.
+- **`kebitx analyze` and the gate of `kebitx build` also check behavior packs.** A pack that passed
+  before can now fail on what they prove broken.
+- **The packs a world's lists activate are found in the game's folders**, so they no longer read as
+  packs the world does not have.
+
+### Added
+
+- **A desktop app for Windows, in C on Win32** (`apps/desktop`, and in the Windows archive): no toolkit
+  and no third-party library. Its first screen lists what can be checked on this computer, to open
+  with a double-click; there is also a path box with autocomplete, Windows' own file dialog with the
+  game's folders in its side bar, drag and drop, and keyboard shortcuts. Preview a repair, apply it
+  and undo it. Analyses show their progress and can be cancelled. What was opened lately comes first,
+  a filter and clickable tiles narrow any list, the verdict has its colour, and the next step stands
+  out. It has a dark look of its own, a light one, or follows the system. The report can be copied, and
+  its folder opened in Explorer.
+- **Worlds are read with own code:** `kebitx world`, **Inspect world** in the app and `kebitx_world`
+  tell what a Bedrock world has saved: chunks by dimension, how many of each block, entity and block
+  entity, its players and what its size goes on. The new crate `kebitx-world` reads the game's LevelDB
+  with no library, verifies its checksums, and never writes. Worlds with saved data and no packs now
+  appear on the app's first screen. Tested on one real world, in two versions of the game.
+- **Findings grouped by what to fix** (app and C ABI): thirty places naming one missing thing are one
+  row, what touches most first, with every place in its details. One click shows them all again.
+- **Package from the app:** a pack becomes a `.mcpack`, a world a `.mcworld`. It says first if there are
+  problems, and that a world's packs from the game's folders do not go inside. `kebitx_package`.
+- **The logo** in the app, its icon and the README, and the window takes its violet.
+- **Seven languages** (app and C ABI): English, Spanish, Portuguese, French, German, Russian and Chinese,
+  findings included, from one catalogue in `crates/kebitx-core/lang` that every system's app shares.
+  The CLI stays in English. The translations have had no native review.
+- **A simpler app for Linux, not in the releases yet** (`apps/desktop/src/x11.c`): no library but libc,
+  speaking the X11 protocol itself, with its own folder browser. It has neither the new look nor the
+  languages, and it only runs under Xvfb in CI so far.
+- **Behavior packs are checked**, alone or as a world uses them: entities, items, blocks, recipes,
+  loot and trade tables, functions, spawn rules, feature rules, animations and scripts. Before, one
+  read as "OK" with nothing looked at. Two levels, because the game's own files name groups, events
+  and tables that do not exist, and run:
+  - `MISSING` is broken: a script, a script module, a function, a server animation, a recipe symbol.
+  - `DEAD` is reported and not counted: that part just does nothing.
+  - Whatever cannot be known from here stays unverified, and `minecraft:` names are never judged.
+  - A test runs the checker over the game's own files: none may read as broken.
+  - `kebitx build`'s gate counts these too.
+- **A world in the game's folders is read as the game loads it:** the packs in its folder, and those
+  its lists activate from the game's folders, with what they depend on. A repair still only writes to
+  the packs in its own folder.
+- **No verdict when nothing was checked (C ABI and app):** a folder that holds no pack, a world with
+  no packs, and a behavior pack that names nothing answer `"nothing": true` and say
+  why, and no longer read as "OK".
+- **The C ABI:**
+  - `kebitx_report`: anything `kebitx analyze` reads, Bedrock or Java, with the lines the CLI prints.
+  - `kebitx_report_with_progress`: the same, telling its steps, and it can be cancelled between them.
+  - `kebitx_places`: what can be checked on this computer.
+  - `kebitx_world`: what a Bedrock world has saved, with its steps, and it can be cancelled.
+  - `kebitx_package`: a pack or a world in one file for the game.
+  - `kebitx_set_language`, `kebitx_languages` and `kebitx_tr`: reports and texts in another language.
+  - `kebitx_repair_plan`, `kebitx_repair_apply` and `kebitx_repair_undo`, with the safe fixes. Applying
+    takes the preview's fingerprint, and refuses if the folder changed since.
+- **Fast loop against careful path:** tests that both give the same bytes, the same input used and
+  the same error, on 150 streams from another compressor, on damaged streams, at output limits
+  and on 20 000 random inputs.
+
+### Known limits
+
+- The translations were written with no native review, and the reasons inside a repair's preview lines
+  are still in English.
+- The app's Linux version has not run on a real desktop.
+- The app was not tried on Windows 10 or on high-DPI screens.
+
+### Removed
+
+- **libdeflate (C)**, vendored in `native/c/third_party`, and `native/c/bench-inflate`. On real
+  commands kebitx's decoder is within 4 %.
+- **criterion and its 74 crates:** `cargo bench` now runs a small harness in `benches/engine.rs`.
+- **`zig build bench-inflate`** and the Zig DEFLATE benchmark.
+
 ## [2.5.0] - 2026-11-05
 
 Analysing a mod takes about half the time, because the game's classes are now read only when
@@ -339,7 +438,8 @@ packs and mods to Bedrock. It is written in Rust with the standard library only.
 - Java shaders have no general Bedrock equivalent.
 - The tests were run on Windows by the author. Linux and macOS are covered by CI.
 
-[Unreleased]: https://github.com/Brashkie/kebitx/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/Brashkie/kebitx/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/Brashkie/kebitx/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/Brashkie/kebitx/compare/v2.3.0...v2.5.0
 [2.3.0]: https://github.com/Brashkie/kebitx/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Brashkie/kebitx/compare/v2.1.0...v2.2.0

@@ -13,7 +13,7 @@
 
 use crate::filesystem::{all_files, json_files};
 use crate::json::{self, Json};
-use crate::manifest::{packs_in, Dependency, Pack, PackKind};
+use crate::manifest::{world_packs, Dependency, Pack, PackKind};
 use crate::nbt::{parse_level_dat, Nbt};
 use crate::par::par_map;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -125,7 +125,7 @@ const NOT_MERGED_BP: [&str; 2] = ["loot_tables/", "trading/"];
 /// Check a world. `game` is the installed version, if known; without it the
 /// engine-version check is skipped rather than guessed.
 pub fn check_world(world: &Path, game: Option<[u32; 3]>) -> CompatReport {
-    let packs = packs_in(world);
+    let packs = world_packs(world);
     let mut report = CompatReport {
         packs: packs.len(),
         ..Default::default()
@@ -284,7 +284,7 @@ fn valid_module_version(v: &str) -> bool {
 /// Information: the reader can compare it with what their game supports.
 pub fn module_inventory(world: &Path) -> BTreeMap<String, BTreeMap<String, Vec<String>>> {
     let mut out: BTreeMap<String, BTreeMap<String, Vec<String>>> = BTreeMap::new();
-    for p in packs_in(world) {
+    for p in world_packs(world) {
         for d in &p.manifest.dependencies {
             if let Dependency::Module { name, version } = d {
                 out.entry(name.clone())
@@ -330,7 +330,8 @@ fn world_lists(world: &Path, packs: &[Pack], report: &mut CompatReport) {
     }
     for p in packs {
         let activatable = matches!(p.manifest.kind, PackKind::Resources | PackKind::Data);
-        if activatable && !listed.contains(&p.manifest.uuid) {
+        // one from the game's folders is here because something needs it
+        if activatable && p.root.starts_with(world) && !listed.contains(&p.manifest.uuid) {
             report.issues.push(CompatIssue::NotActivated {
                 pack: p.folder.clone(),
             });

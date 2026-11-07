@@ -1,0 +1,9 @@
+[package]
+name = "kebitx-world"
+description = "Minecraft worlds, read with own code: Bedrock's LevelDB and what is saved in it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kebitx-core.workspace = true

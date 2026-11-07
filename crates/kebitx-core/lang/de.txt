@@ -1,0 +1,264 @@
+zeigt die fehlende Textur; füge {0}.png (oder .tga) hinzu, oder verweise die Entität auf eine vorhandene Textur
+die Entität ist unsichtbar; füge ein Modell hinzu, das {0} definiert, oder korrigiere den Bezeichner
+wird nie abgespielt; definiere {0} in den Animationen eines RESSOURCEN-Pakets (eine Definition im Verhaltenspaket zählt nicht), oder entferne sie aus der Entität
+die Entität wird nicht gezeichnet; definiere {0} in render_controllers/, oder nutze einen des Spiels
+die Entität wird evtl. nicht gezeichnet; nutze ein Spielmaterial (entity_alphatest, entity, ...) oder definiere {0} in materials/
+der Block oder Gegenstand zeigt die fehlende Textur; füge das Bild hinzu oder korrigiere den Pfad im Atlas
+der Render-Controller verlangt von der Entität einen Namen, den sie nicht deklariert; deklariere ihn in der Entität, oder ändere den Controller
+der Befehl schlägt fehl, und das Spiel kann die aufrufende Funktion ablehnen; füge {0} hinzu, oder korrigiere den Namen
+die Skripte des Pakets laden nicht; füge {0} hinzu, oder korrigiere den Pfad
+das Skript lädt nicht; füge {0} zu den Abhängigkeiten in manifest.json hinzu
+wird nie ausgeführt; deklariere {0} in description.animations, oder entferne es aus scripts.animate
+wird nie ausgeführt; definiere {0} in diesem VERHALTENS-Paket (eine Definition im Ressourcenpaket zählt hier nicht), oder entferne es aus der Entität
+das Rezept wird nicht geladen; füge '{0}' zu seinem Schlüssel hinzu, oder entferne es aus dem Muster
+füge das Referenzierte hinzu, oder entferne die Referenz
+daraus kommt nichts; füge {0} hinzu, korrigiere den Pfad, oder entferne es, falls nichts kommen soll
+dieser Teil des Ereignisses tut nichts; definiere {0} in component_groups, oder entferne es aus dem Ereignis
+in diesem Moment passiert nichts; definiere {0} in events, oder korrigiere den Namen
+die Pakete hier definieren andere in seinem Namensraum, aber nicht diesen: er tut nichts, außer ein hier fehlendes Paket definiert ihn; definiere {0}, oder korrigiere den Namen
+funktioniert unter Windows, fehlende Textur unter Android/iOS; schreibe die Referenz wie die Datei heißt ({0}), oder benenne die Datei in {1} um
+immer die fehlende Textur; gib {0} einen Texturpfad, oder entferne den Eintrag
+nichts darin wurde geprüft, und das Spiel lehnt es evtl. auch ab; korrigiere die Syntax ({0})
+Textur
+Geometrie
+Animation
+Animations-Controller
+Render-Controller
+Material
+Atlas
+Textur-Slot
+Geometrie-Slot
+Material-Slot
+Funktion
+Skriptdatei
+Skriptmodul
+Animationsname
+Verhaltensanimation
+Verhaltens-Controller
+Rezeptschlüssel
+Beutetabelle
+Handelstabelle
+Komponentengruppe
+Ereignis
+Gegenstand
+Block
+Entität
+Feature
+falsche Schreibweise
+leeres Texturset
+unlesbar
+{0}: Modell {1} existiert nicht
+{0}: Textur {1} existiert nicht
+{0}: eine Fläche verlangt #{1}, das ihre Kette nie setzt (die fehlende Textur erscheint; verwendet von {2})
+{0}: {1}x{2} lässt sich nicht in Frames von {3}x{4} teilen (das Spiel lehnt es ab)
+{0}: unlesbar ({1})
+{0}: kein PNG (das Spiel prüft die Signatur und lehnt es ab)
+{0}: {1}x{2}, die des Spiels ist {3}x{4} (andere Proportionen)
+{0}: {1} von {2} englischen Schlüsseln fehlen (Englisch erscheint)
+Klasse {0} existiert nicht (verwendet von {1}, {2} Klasse(n))
+Feld {0}.{1} {2} existiert nicht (verwendet von {3}, {4} Klasse(n))
+Methode {0}.{1} {2} existiert nicht (verwendet von {3}, {4} Klasse(n))
+Mixin {0} zielt auf {1}, das nicht existiert
+Mixin {0}: {1} {2} ist nicht in {3} (Mixin lehnt die Klasse beim Start ab)
+Mixin {0}: {1} findet {2} nicht (erforderlich: das Spiel startet nicht)
+Mixin {0}: {1} findet {2} nicht (nicht erforderlich: tut stillschweigend nichts)
+{0} ist nicht in der .jar des Spiels (verwendet von {1}; kann kommen von: {2})
+Mod {0} ist in {1} Jars: {2} (der Loader verweigert den Start)
+{0} ({1}) braucht {2} {3}, das kein Mod hier liefert
+{0} ({1}) braucht {2} {3}; hier ist es {4}
+{0} ({1}) erklärt, {2} {3} zu brechen; hier: {4}
+{0} nutzen alle @Overwrite auf {1}.{2}: nur eine Änderung überlebt
+Mods für {0} in einem Ordner: jeder Loader lädt nur seine eigenen
+{0}: keine Mod-Metadaten (eine Bibliothek, oder kein Mod)
+Spiel: Java {0}
+Spiel: Java {0} (neueste installierte: nicht die verlangte Version)
+Spiel: nicht installiert, daher wurde nichts vom Spiel geprüft
+Spiel: nicht installiert, daher wurden Verweise darauf nicht geprüft
+Spiel: Bedrock {0}
+Mods: {0}
+Pakete: {0}
+Entitäten: {0}
+Verhaltensreferenzen: {0}
+Hier nicht prüfbar: {0}
+Schreibweise-Fehler: {0}
+Kompatibilitätsfehler: {0}
+Ungenutzte Assets: {0}
+Geprüfte Referenzen: {0}
+Klassen: {0}
+{0} Kompatibilitätsfehler zwischen den Paketen: führe `kebitx analyze` für jedes aus
+Java-Mod-Ordner
+Java-Ressourcenpaket
+Java-Assets
+{0}-Mod: {1}
+Bedrock-Paket
+Bedrock-Welt
+Abgebrochen
+Hier ist kein Paket, keine Welt und keine Mods
+Ein Paket hat manifest.json, eine Welt hat level.dat, und ein Mod-Ordner hat .jar-Dateien.
+Dieser Ordner enthält 1 Paket: öffne dieses.
+Dieser Ordner enthält {0} Pakete: öffne eines davon.
+Welt ohne Pakete
+Sie enthält keine, und ihre Listen aktivieren keine auffindbaren, also gibt es nichts zu prüfen.
+Verhaltenspaket ohne Prüfbares
+Es nennt keine Datei, keinen Gegenstand und kein Ereignis, dem man folgen könnte.
+Spiel wird gelesen
+Referenzen werden geprüft
+Kompatibilität wird geprüft
+Ungenutzte Dateien werden gesucht
+Analyse
+Reparaturen gibt es für Bedrock-Pakete und -Welten sowie Java-Mod-Ordner.
+Kein Ordner.
+Hier gibt es nichts, was kebitx sicher reparieren kann.
+Jede Datei wird zuerst gesichert, und das Ergebnis bleibt nur, wenn es strikt besser ist.
+Reparatur-Vorschau
+Nichts wurde geändert
+Der Ordner hat sich seit der Vorschau geändert. Erstelle die Vorschau neu.
+Die Reparatur ist fehlgeschlagen
+Probleme: {0} vorher, {1} nachher.
+Reparatur behalten
+Sicherung: {0}
+Reparatur zurückgerollt
+Es war nicht strikt besser, also blieb jede Datei, wie sie war.
+Reparatur rückgängig gemacht
+{0} Datei(en) wiederhergestellt.
+Rückgängig fehlgeschlagen
+{0} bearbeiten: {1} -> {2} ({3}x). {4}
+{0} löschen. {1}
+{0} herausnehmen: {1}
+Start
+Ordner öffnen...
+Datei öffnen...
+Analysieren
+Vorschau
+Anwenden...
+Rückgängig...
+Ordner zeigen
+Bericht kopieren
+Kopiert
+Abbrechen
+Design
+Dunkel
+Hell
+System
+Pfad eines Pakets, einer Welt, eines Mods oder Mod-Ordners eingeben oder einfügen
+Liste filtern: ein Name, eine Datei, eine Problemart (Strg+F)
+Nichts in der Liste passt zum Filter.
+Hier wurde nichts gefunden. Wähle oben einen Ordner oder eine Datei.
+Keine Ergebnisse anzuzeigen.
+Typ
+Ergebnis
+Name
+Ordner
+Alle
+Probleme
+Ohne Wirkung
+Hinweise
+Welten
+Verhaltenspakete
+Ressourcenpakete
+Problem
+Änderung
+Neues Problem
+Hinweis
+Ohne Wirkung
+Zuletzt
+Welt
+Verhaltenspaket
+Verhaltenspaket (Dev)
+Ressourcenpaket
+Ressourcenpaket (Dev)
+Mod-Ordner
+Java-Mods
+Was möchtest du prüfen?
+Diese sind auf diesem Computer: doppelklicke auf eines, oder drücke die Eingabetaste. Sonst gib einen Pfad ein, wähle einen Ordner oder eine Datei, oder ziehe ihn auf dieses Fenster.
+In den üblichen Ordnern des Spiels gibt es nichts zu prüfen. Gib einen Pfad ein, wähle einen Ordner oder eine Datei, oder ziehe ihn auf dieses Fenster.
+Analysiere...
+Plane die Reparatur...
+Repariere...
+Mache die Reparatur rückgängig...
+Suche Minecraft...
+Breche ab...
+Analyse abgebrochen
+Nichts wurde geändert.
+Die Engine konnte das nicht lesen
+Prüfe den Pfad: es muss ein Ordner oder eine .jar- oder .zip-Datei sein.
+Die Engine konnte keine Reparatur planen
+Nichts zu reparieren
+Vorschau: 1 Änderung. Noch wurde nichts geschrieben.
+Vorschau: {0} Änderungen. Noch wurde nichts geschrieben.
+Die Reparatur gab keine Antwort
+Rückgängig gab keine Antwort
+Prüfe den Ordner: die Engine gab keine Antwort.
+OK: nichts als defekt bewiesen
+1 Problem
+{0} Probleme
+1 ohne Wirkung
+{0} ohne Wirkung
+Schritt {0} von {1}: {2}
+Änderungen aus der Vorschau anwenden?
+Jede Datei wird zuerst gesichert. Der Ordner wird neu analysiert, und das Ergebnis bleibt nur, wenn es strikt besser ist.
+Reparatur rückgängig machen?
+Jede geänderte Datei wird zurückgesetzt, auch jede spätere Änderung an diesen Dateien.
+Eine Reparatur läuft. Sie ist gleich fertig.
+Wähle ein Paket, eine Welt oder einen Mod-Ordner
+Wähle einen Mod oder ein Paket
+Mods und Pakete (*.jar, *.zip)
+Alle Dateien
+Windows konnte den Dateidialog nicht öffnen
+Gib oben den Pfad ein, oder ziehe den Ordner hierher.
+Dieser Pfad kann nicht als Text gelesen werden
+Die Engine fehlt
+Eine aktuelle kebitx_ffi.dll muss neben diesem Programm liegen.
+Kein Speicher mehr
+Konnte nicht starten
+Zeigt, was eine Reparatur ändern würde. Nichts wird geschrieben.
+Sichert zuerst jede Datei, und behält das Ergebnis nur, wenn es strikt besser ist.
+Stellt jede von der Reparatur geänderte Datei wieder her.
+Kopiert den ganzen Bericht, zum Einfügen überall.
+Öffnet es im Datei-Explorer.
+Semantische Engine für Minecraft-Pakete
+Nach Ursache gruppieren
+Alle Ergebnisse zeigen
+Betrifft:
+Verpacken...
+Paket speichern
+Es hat 1 Problem. Trotzdem verpacken?
+Es hat {0} Probleme. Trotzdem verpacken?
+Wer es installiert, hat sie auch.
+Paket erstellt
+Datei: {0}
+Dateien: {0}
+Das Paket konnte nicht erstellt werden
+Nur ein Paket oder eine Welt kann verpackt werden.
+Das Paket kann nicht in den Ordner, den es verpackt.
+Paket wird erstellt...
+Legt alles in eine Datei, bereit zum Öffnen in Minecraft.
+Minecraft-Paket (*.mcpack)
+Minecraft-Welt (*.mcworld)
+Die Pakete aus den Ordnern des Spiels sind nicht enthalten: wer es öffnet, braucht sie auch.
+Welt untersuchen
+Liest alles, was in dieser Welt gespeichert ist. Nichts wird geschrieben.
+Welt wird gelesen...
+Welt wird gelesen
+Welt: {0}
+Version: {0}
+Seed: {0}
+Oberwelt
+Nether
+Das End
+Dimension {0}
+{0}: {1} Chunks
+Blöcke, ohne Luft: {0}
+Blockentitäten: {0}
+Spieler: {0}
+Größe: {0} auf der Festplatte; entpackt, Gelände {1}, Entitäten {2}, Blockentitäten {3}, Spieler {4}, Sonstiges {5}
+Altes Format, nicht gezählt: {0} Chunk-Teile
+Nicht lesbar: {0}
+Die Welt konnte nicht gelesen werden
+Block
+Entität
+Blockentität
+Blocktypen
+Entitätstypen
+Blockentitätstypen
+Anzahl

@@ -1,10 +1,10 @@
 //! The Java Edition commands: `analyze` on a pack, a mod or a `mods/` folder,
 //! and `repair` on a `mods/` folder.
 
-use kebitx_java::code::CodeFinding;
-use kebitx_java::modset::{ModFolder, SetFinding};
+use kebitx_java::describe;
+use kebitx_java::modset::ModFolder;
 use kebitx_java::repair::{apply, plan, Fix};
-use kebitx_java::{Finding, JavaAssets, JavaJar, Kind, Source};
+use kebitx_java::{JavaAssets, JavaJar, Kind, Source};
 use std::path::Path;
 
 /// A titled list, cut to 20 lines unless `--all`. Nothing when it is empty.
@@ -104,52 +104,12 @@ pub fn run_java_set(root: &Path, show_all: bool, game: Option<&str>) -> i32 {
     println!();
 
     let show = |title: &str, items: Vec<String>| print_list(title, &items, show_all);
-    let set_line = |f: &SetFinding| match f {
-        SetFinding::Duplicate { id, jars } => format!(
-            "mod {id} is in {} jars: {} (the loader refuses to start)",
-            jars.len(),
-            jars.join(", ")
-        ),
-        SetFinding::Missing {
-            jar,
-            id,
-            dependency,
-            wanted,
-        } => format!("{id} ({jar}) needs {dependency} {wanted}, which no mod here provides"),
-        SetFinding::WrongVersion {
-            jar,
-            id,
-            dependency,
-            wanted,
-            found,
-        } => format!("{id} ({jar}) needs {dependency} {wanted}; here it is {found}"),
-        SetFinding::Breaks {
-            jar,
-            id,
-            other,
-            rule,
-            found,
-        } => format!("{id} ({jar}) declares it breaks {other} {rule}; here: {found}"),
-        SetFinding::OverwriteConflict {
-            target,
-            method,
-            mods,
-        } => format!(
-            "{} all @Overwrite {target}.{method}: only one change survives",
-            mods.join(", ")
-        ),
-        SetFinding::MixedLoaders { loaders } => format!(
-            "mods for {} in one folder: each loader loads only its own",
-            loaders.join(" and ")
-        ),
-        SetFinding::NotAMod { jar } => format!("{jar}: no mod metadata (a library, or not a mod)"),
-    };
     show(
         "The loader refuses this set",
         r.findings
             .iter()
             .filter(|f| !f.is_info())
-            .map(set_line)
+            .map(describe::set_line)
             .collect(),
     );
     show(
@@ -157,13 +117,13 @@ pub fn run_java_set(root: &Path, show_all: bool, game: Option<&str>) -> i32 {
         r.findings
             .iter()
             .filter(|f| f.is_info())
-            .map(set_line)
+            .map(describe::set_line)
             .collect(),
     );
     let mut broken_lines = Vec::new();
     for m in &r.mods {
         for f in m.report.findings.iter().filter(|f| !f.is_info()) {
-            broken_lines.push(format!("{}: {}", m.jar, java_line(f)));
+            broken_lines.push(format!("{}: {}", m.jar, describe::finding_line(f)));
         }
         for f in m
             .report
@@ -172,7 +132,7 @@ pub fn run_java_set(root: &Path, show_all: bool, game: Option<&str>) -> i32 {
             .flat_map(|c| &c.findings)
             .filter(|f| !f.is_info())
         {
-            broken_lines.push(format!("{}: {}", m.jar, code_line(f)));
+            broken_lines.push(format!("{}: {}", m.jar, describe::code_line(f)));
         }
     }
     show("Broken in the mods", broken_lines);
@@ -199,12 +159,8 @@ pub fn run_java_analyze(root: &Path, show_all: bool, game: Option<&str>) -> i32 
     let java = JavaAssets::discover();
     // the version asked for; else the pack's format, or the one version a
     // mod names; else the newest stable one
-    let jar = match choose_game(java.as_ref(), game, |j| match &kind {
-        Kind::ResourcePack { formats } => j.jar_in(*formats),
-        Kind::Mod {
-            minecraft: Some(m), ..
-        } => j.jar_for_requirement(m).or_else(|| j.jar_for(None)),
-        _ => j.jar_for(None),
+    let jar = match choose_game(java.as_ref(), game, |j| {
+        kebitx_java::analyze::game_for(j, &kind)
     }) {
         Ok(jar) => jar,
         Err(code) => return code,
@@ -269,7 +225,7 @@ pub fn run_java_analyze(root: &Path, show_all: bool, game: Option<&str>) -> i32 
         r.findings
             .iter()
             .filter(|f| !f.is_info())
-            .map(java_line)
+            .map(describe::finding_line)
             .collect(),
     );
     show(
@@ -277,7 +233,7 @@ pub fn run_java_analyze(root: &Path, show_all: bool, game: Option<&str>) -> i32 
         r.findings
             .iter()
             .filter(|f| f.is_info())
-            .map(java_line)
+            .map(describe::finding_line)
             .collect(),
     );
     if let Some(c) = &r.code {
@@ -315,7 +271,7 @@ pub fn run_java_analyze(root: &Path, show_all: bool, game: Option<&str>) -> i32 
             c.findings
                 .iter()
                 .filter(|f| !f.is_info())
-                .map(code_line)
+                .map(describe::code_line)
                 .collect(),
         );
         show(
@@ -323,7 +279,7 @@ pub fn run_java_analyze(root: &Path, show_all: bool, game: Option<&str>) -> i32 
             c.findings
                 .iter()
                 .filter(|f| f.is_info())
-                .map(code_line)
+                .map(describe::code_line)
                 .collect(),
         );
     }
@@ -425,99 +381,4 @@ pub fn run_java_repair(dir: &Path, args: &[String]) -> i32 {
             1
         }
     }
-}
-
-/// One finding of a Java pack or mod, as a report line.
-fn java_line(f: &Finding) -> String {
-    match f {
-        Finding::MissingModel { file, model } => format!("{file}: model {model} does not exist"),
-        Finding::MissingTexture { file, texture } => {
-            format!("{file}: texture {texture} does not exist")
-        }
-        Finding::UnboundTexture {
-            model,
-            variable,
-            used_by,
-        } => format!(
-            "{model}: a face asks for #{variable}, which its chain never sets (the missing texture shows; used by {used_by})"
-        ),
-        Finding::BadAnimation {
-            texture,
-            size,
-            frame,
-        } => format!(
-            "{texture}: {}x{} does not divide into {}x{} frames (the game refuses it)",
-            size.0, size.1, frame.0, frame.1
-        ),
-        Finding::Unreadable { file, why } => format!("{file}: unreadable ({why})"),
-        Finding::NotPng { texture } => {
-            format!("{texture}: not a PNG (the game checks the signature and refuses it)")
-        }
-        Finding::Proportions {
-            texture,
-            size,
-            game,
-        } => format!(
-            "{texture}: {}x{}, the game's is {}x{} (other proportions)",
-            size.0, size.1, game.0, game.1
-        ),
-        Finding::MissingLangKeys { file, missing, of } => {
-            format!("{file}: {missing} of {of} English keys missing (English shows)")
-        }
-    }
-}
-
-/// One finding about a mod's code, as a report line.
-fn code_line(f: &CodeFinding) -> String {
-    match f {
-            CodeFinding::MissingClass {
-                class,
-                used_by,
-                uses,
-            } => format!("class {class} does not exist (used by {used_by}, {uses} class(es))"),
-            CodeFinding::MissingMember {
-                owner,
-                name,
-                descriptor,
-                field,
-                used_by,
-                uses,
-            } => format!(
-                "{} {owner}.{name} {descriptor} does not exist (used by {used_by}, {uses} class(es))",
-                if *field { "field" } else { "method" }
-            ),
-            CodeFinding::MissingMixinTarget { mixin, target } => {
-                format!("mixin {mixin} targets {target}, which does not exist")
-            }
-            CodeFinding::Unreadable { file, why } => format!("{file}: unreadable ({why})"),
-            CodeFinding::MixinMember {
-                mixin,
-                target,
-                how,
-                member,
-            } => format!(
-                "mixin {mixin}: {how} {member} is not in {target} (Mixin refuses the class at start-up)"
-            ),
-            CodeFinding::MixinInjection {
-                mixin,
-                handler,
-                missing,
-                required,
-                ..
-            } => format!(
-                "mixin {mixin}: {handler} finds no {missing} ({})",
-                if *required {
-                    "required: the game does not start"
-                } else {
-                    "not required: it silently does nothing"
-                }
-            ),
-            CodeFinding::NotInGame {
-                what,
-                used_by,
-                may_come_from,
-            } => format!(
-                "{what} is not in the game's .jar (used by {used_by}; may come from: {may_come_from})"
-            ),
-        }
 }

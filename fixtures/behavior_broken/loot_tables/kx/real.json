@@ -1,0 +1,1 @@
+{ "pools": [ { "entries": [ { "type": "item", "name": "kx:no_such_item" }, { "type": "item", "name": "other_pack:unknown" }, { "type": "loot_table", "name": "loot_tables/kx/gone_nested.json" } ] } ] }

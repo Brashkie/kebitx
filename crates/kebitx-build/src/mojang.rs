@@ -43,6 +43,28 @@ pub fn candidates() -> Vec<PathBuf> {
     out
 }
 
+/// Every `com.mojang` folder that exists: the candidates, and each player's own
+/// under the current launcher, where their worlds are.
+pub fn all_roots() -> Vec<PathBuf> {
+    let mut out = candidates();
+    if let Some(appdata) = env::var_os("APPDATA") {
+        let users = PathBuf::from(appdata)
+            .join("Minecraft Bedrock")
+            .join("Users");
+        if let Ok(entries) = std::fs::read_dir(users) {
+            out.extend(
+                entries
+                    .flatten()
+                    .map(|e| e.path().join("games").join("com.mojang"))
+                    .filter(|p| !out.contains(p))
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+    out.retain(|p| p.is_dir());
+    out
+}
+
 pub fn com_mojang() -> Option<PathBuf> {
     let c = candidates();
     c.iter()

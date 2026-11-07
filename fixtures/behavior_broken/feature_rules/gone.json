@@ -1,0 +1,1 @@
+{ "format_version": "1.21.0", "minecraft:feature_rules": { "description": { "identifier": "kx:rule", "places_feature": "kx:no_such_feature" } } }

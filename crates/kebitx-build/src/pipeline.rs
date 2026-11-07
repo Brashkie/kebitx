@@ -11,7 +11,7 @@ use crate::config::{Project, Target};
 use crate::fsutil::{copy_dir, fresh_owned_dir, replace_owned_dir};
 use crate::mojang;
 use crate::zip::write_zip;
-use kebitx_core::analyze::analyze_world_with;
+use kebitx_core::analyze::analyze_world_all;
 use kebitx_core::compat::check_world;
 use kebitx_core::filesystem::all_files;
 use kebitx_core::json::{self, Json, JsonMap};
@@ -113,7 +113,7 @@ pub fn build(
     // ---- 3. the analysis as a gate
     if opts.check.unwrap_or(project.check) {
         report.checked = true;
-        report.broken = analyze_world_with(&report.work, catalog)
+        report.broken = analyze_world_all(&report.work, catalog)
             .iter()
             .map(|(_, r)| r.broken() + r.case_mismatches)
             .sum();

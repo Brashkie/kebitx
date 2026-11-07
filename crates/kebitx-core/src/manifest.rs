@@ -183,6 +183,113 @@ pub fn packs_in(world: &Path) -> Vec<Pack> {
     out
 }
 
+/// What a world's lists activate (`pack_id`, lowercased). Empty without lists.
+pub fn listed_packs(world: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for list in ["world_behavior_packs.json", "world_resource_packs.json"] {
+        let Ok(src) = crate::filesystem::read_text(&world.join(list)) else {
+            continue;
+        };
+        let Ok(root) = json::parse(&src) else {
+            continue;
+        };
+        for entry in root.as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            if let Some(id) = entry.get("pack_id").and_then(Json::as_str) {
+                out.push(id.trim().to_ascii_lowercase());
+            }
+        }
+    }
+    out
+}
+
+/// Where the game keeps the packs a world can use: only for a world in the game's
+/// `minecraftWorlds`. A copy of a world elsewhere has what it carries and no more.
+/// The current launcher keeps worlds per player and packs in `Users/Shared`.
+fn game_pack_folders(world: &Path) -> Vec<PathBuf> {
+    let Some(worlds) = world.parent().filter(|p| p.ends_with("minecraftWorlds")) else {
+        return Vec::new();
+    };
+    let Some(mojang) = worlds.parent() else {
+        return Vec::new();
+    };
+    let mut roots = vec![mojang.to_path_buf()];
+    let shared = mojang
+        .parent()
+        .filter(|games| games.ends_with("games"))
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .filter(|users| users.ends_with("Users"))
+        .map(|users| users.join("Shared").join("games").join("com.mojang"));
+    roots.extend(shared.filter(|s| s != mojang));
+    let mut out = Vec::new();
+    for root in roots {
+        for sub in [
+            "development_behavior_packs",
+            "development_resource_packs",
+            "behavior_packs",
+            "resource_packs",
+        ] {
+            out.push(root.join(sub));
+        }
+    }
+    out
+}
+
+/// Every pack a world uses: those in its folder, and those its lists activate from
+/// the game's folders, with what those depend on. For READING: nothing may ever
+/// write to a pack found here that is not in `packs_in`, since other worlds share it.
+pub fn world_packs(world: &Path) -> Vec<Pack> {
+    let mut out = packs_in(world);
+    let have = |out: &[Pack], id: &str| out.iter().any(|p| p.manifest.uuid == id);
+    let mut wanted: Vec<String> = listed_packs(world)
+        .into_iter()
+        .filter(|id| !have(&out, id))
+        .collect();
+    // what the world's own packs need comes from the same place
+    for p in &out {
+        for d in &p.manifest.dependencies {
+            if let Dependency::Pack { uuid } = d {
+                if !have(&out, uuid) {
+                    wanted.push(uuid.clone());
+                }
+            }
+        }
+    }
+    if wanted.is_empty() {
+        return out;
+    }
+    let mut installed = Vec::new();
+    for dir in game_pack_folders(world) {
+        for root in subdirs(&dir) {
+            if let (Some(manifest), Some(folder)) = (read_manifest(&root), root.file_name()) {
+                let folder = folder.to_string_lossy().to_string();
+                installed.push(Pack {
+                    root,
+                    folder,
+                    manifest,
+                });
+            }
+        }
+    }
+    while let Some(id) = wanted.pop() {
+        if have(&out, &id) {
+            continue;
+        }
+        // the first one wins: the player's own development copy over an installed one
+        if let Some(i) = installed.iter().position(|p| p.manifest.uuid == id) {
+            let pack = installed.swap_remove(i);
+            for d in &pack.manifest.dependencies {
+                if let Dependency::Pack { uuid } = d {
+                    wanted.push(uuid.clone());
+                }
+            }
+            out.push(pack);
+        }
+    }
+    out.sort_by(|a, b| a.root.cmp(&b.root));
+    out
+}
+
 /// One pack on its own. A folder without a readable manifest (an author's work
 /// folder) is taken as a resource pack, which is what single-pack analysis
 /// assumes everywhere else.

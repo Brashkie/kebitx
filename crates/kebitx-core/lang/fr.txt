@@ -1,0 +1,264 @@
+affiche la texture manquante ; ajoutez {0}.png (ou .tga), ou faites pointer l'entité vers une texture existante
+l'entité est invisible ; ajoutez un modèle qui définit {0}, ou corrigez l'identifiant
+elle ne se joue jamais ; définissez {0} dans les animations d'un pack de RESSOURCES (une définition dans un pack de comportement ne compte pas), ou retirez-la de l'entité
+l'entité ne s'affiche pas ; définissez {0} dans render_controllers/, ou utilisez un de ceux du jeu
+l'entité peut ne pas s'afficher ; utilisez un matériau du jeu (entity_alphatest, entity, ...) ou définissez {0} dans materials/
+le bloc ou l'objet affiche la texture manquante ; ajoutez l'image ou corrigez le chemin dans l'atlas
+le contrôleur de rendu demande à l'entité un nom qu'elle ne déclare pas ; déclarez-le dans l'entité, ou changez le contrôleur
+la commande échoue, et le jeu peut refuser la fonction qui l'appelle ; ajoutez {0}, ou corrigez le nom
+les scripts du pack ne se chargent pas ; ajoutez {0}, ou corrigez le chemin
+le script ne se charge pas ; ajoutez {0} aux dépendances de manifest.json
+elle ne s'exécute jamais ; déclarez {0} dans description.animations, ou retirez-la de scripts.animate
+elle ne s'exécute jamais ; définissez {0} dans ce pack de COMPORTEMENT (une définition dans un pack de ressources ne compte pas ici), ou retirez-la de l'entité
+la recette n'est pas chargée ; ajoutez '{0}' à sa clé, ou retirez-le du motif
+ajoutez ce qui est référencé, ou retirez la référence
+rien n'en sort ; ajoutez {0}, corrigez le chemin, ou retirez-la si rien ne doit en sortir
+cette partie de l'événement ne fait rien ; définissez {0} dans component_groups, ou retirez-le de l'événement
+rien ne se passe à ce moment-là ; définissez {0} dans events, ou corrigez le nom
+les packs ici en définissent d'autres dans son espace de noms, mais pas celui-ci : il ne fait rien sauf si un pack absent le définit ; définissez {0}, ou corrigez le nom
+fonctionne sous Windows, texture manquante sous Android/iOS ; écrivez la référence comme le fichier s'appelle ({0}), ou renommez le fichier en {1}
+toujours la texture manquante ; donnez à {0} un chemin de texture, ou retirez l'entrée
+rien à l'intérieur n'a été vérifié, et le jeu peut aussi le refuser ; corrigez la syntaxe ({0})
+texture
+géométrie
+animation
+contrôleur d'animation
+contrôleur de rendu
+matériau
+atlas
+emplacement de texture
+emplacement de géométrie
+emplacement de matériau
+fonction
+fichier de script
+module de script
+nom d'animation
+animation de comportement
+contrôleur de comportement
+clé de recette
+table de butin
+table d'échange
+groupe de composants
+événement
+objet
+bloc
+entité
+feature
+mauvaise casse
+ensemble de textures vide
+illisible
+{0} : le modèle {1} n'existe pas
+{0} : la texture {1} n'existe pas
+{0} : une face demande #{1}, que sa chaîne ne définit jamais (la texture manquante s'affiche ; utilisé par {2})
+{0} : {1}x{2} ne se divise pas en images de {3}x{4} (le jeu refuse)
+{0} : illisible ({1})
+{0} : pas un PNG (le jeu vérifie la signature et refuse)
+{0} : {1}x{2}, celle du jeu fait {3}x{4} (autres proportions)
+{0} : il manque {1} clés anglaises sur {2} (l'anglais s'affiche)
+la classe {0} n'existe pas (utilisée par {1}, {2} classe(s))
+le champ {0}.{1} {2} n'existe pas (utilisé par {3}, {4} classe(s))
+la méthode {0}.{1} {2} n'existe pas (utilisée par {3}, {4} classe(s))
+le mixin {0} cible {1}, qui n'existe pas
+mixin {0} : {1} {2} n'est pas dans {3} (Mixin refuse la classe au démarrage)
+mixin {0} : {1} ne trouve pas {2} (requis : le jeu ne démarre pas)
+mixin {0} : {1} ne trouve pas {2} (non requis : ne fait rien, en silence)
+{0} n'est pas dans le .jar du jeu (utilisé par {1} ; peut venir de : {2})
+le mod {0} est dans {1} jars : {2} (le chargeur refuse de démarrer)
+{0} ({1}) a besoin de {2} {3}, qu'aucun mod ici ne fournit
+{0} ({1}) a besoin de {2} {3} ; ici c'est {4}
+{0} ({1}) déclare casser {2} {3} ; ici : {4}
+{0} utilisent tous @Overwrite sur {1}.{2} : un seul changement survit
+mods pour {0} dans un dossier : chaque chargeur ne charge que les siens
+{0} : pas de métadonnées de mod (une bibliothèque, ou pas un mod)
+Jeu : Java {0}
+Jeu : Java {0} (la plus récente installée : pas la version demandée)
+Jeu : non installé, donc rien du jeu n'a été vérifié
+Jeu : non installé, donc les références au jeu n'ont pas été vérifiées
+Jeu : Bedrock {0}
+Mods : {0}
+Packs : {0}
+Entités : {0}
+Références de comportement : {0}
+Non vérifiables ici : {0}
+Erreurs de casse : {0}
+Erreurs de compatibilité : {0}
+Ressources inutilisées : {0}
+Références vérifiées : {0}
+Classes : {0}
+{0} erreur(s) de compatibilité entre les packs : lancez `kebitx analyze` sur chacun
+Dossier de mods Java
+Pack de ressources Java
+Ressources Java
+Mod {0} : {1}
+Pack Bedrock
+Monde Bedrock
+Annulé
+Aucun pack, monde ni mod ici
+Un pack a un manifest.json, un monde a un level.dat, et un dossier de mods a des fichiers .jar.
+Ce dossier contient 1 pack : ouvrez celui-là.
+Ce dossier contient {0} packs : ouvrez-en un.
+Monde sans packs
+Il n'en contient aucun, et ses listes n'en activent aucun qui ait été trouvé : rien à vérifier.
+Pack de comportement sans rien à vérifier
+Il ne cite aucun fichier, objet ni événement à suivre.
+Lecture du jeu
+Vérification des références
+Vérification de la compatibilité
+Recherche des fichiers inutilisés
+Analyse
+Les réparations existent pour les packs et mondes Bedrock, et les dossiers de mods Java.
+Ce n'est pas un dossier.
+Rien ici que kebitx puisse réparer sans risque.
+Chaque fichier est d'abord sauvegardé, et le résultat n'est gardé que s'il est strictement meilleur.
+Aperçu de la réparation
+Rien n'a été modifié
+Le dossier a changé depuis l'aperçu. Refaites l'aperçu.
+La réparation a échoué
+Problèmes : {0} avant, {1} après.
+Réparation conservée
+Sauvegarde : {0}
+Réparation annulée
+Ce n'était pas strictement meilleur : chaque fichier est resté tel quel.
+Réparation défaite
+{0} fichier(s) restauré(s).
+Échec de l'annulation
+Modifier {0} : {1} -> {2} ({3} fois). {4}
+Supprimer {0}. {1}
+Retirer {0} : {1}
+Accueil
+Ouvrir un dossier...
+Ouvrir un fichier...
+Analyser
+Aperçu
+Appliquer...
+Annuler la réparation...
+Afficher le dossier
+Copier le rapport
+Copié
+Annuler
+Thème
+Sombre
+Clair
+Système
+Tapez ou collez le chemin d'un pack, d'un monde, d'un mod ou d'un dossier de mods
+Filtrez la liste : un nom, un fichier, un type de problème (Ctrl+F)
+Rien dans la liste ne correspond au filtre.
+Rien trouvé ici. Choisissez un dossier ou un fichier ci-dessus.
+Aucun résultat à afficher.
+Type
+Résultat
+Nom
+Dossier
+Tout
+Problèmes
+Sans effet
+Notes
+Mondes
+Packs de comportement
+Packs de ressources
+Problème
+Changement
+Nouveau problème
+Note
+Sans effet
+Récent
+Monde
+Pack de comportement
+Pack de comportement (dev)
+Pack de ressources
+Pack de ressources (dev)
+Dossier de mods
+Mods Java
+Que voulez-vous vérifier ?
+Ceux-ci sont sur cet ordinateur : double-cliquez sur l'un d'eux, ou appuyez sur Entrée. Sinon, tapez ou collez un chemin, choisissez un dossier ou un fichier, ou déposez-le sur cette fenêtre.
+Rien à vérifier dans les dossiers habituels du jeu. Tapez ou collez un chemin, choisissez un dossier ou un fichier, ou déposez-le sur cette fenêtre.
+Analyse...
+Préparation de la réparation...
+Réparation...
+Annulation de la réparation...
+Recherche de Minecraft...
+Annulation...
+Analyse annulée
+Rien n'a été modifié.
+Le moteur n'a pas pu lire cela
+Vérifiez le chemin : ce doit être un dossier, ou un fichier .jar ou .zip.
+Le moteur n'a pas pu préparer de réparation
+Rien à réparer
+Aperçu : 1 changement. Rien n'a encore été écrit.
+Aperçu : {0} changements. Rien n'a encore été écrit.
+La réparation n'a donné aucune réponse
+L'annulation n'a donné aucune réponse
+Vérifiez le dossier : le moteur n'a donné aucune réponse.
+OK : rien de prouvé cassé
+1 problème
+{0} problèmes
+1 sans effet
+{0} sans effet
+Étape {0} sur {1} : {2}
+Appliquer les changements de l'aperçu ?
+Chaque fichier est d'abord sauvegardé. Le dossier est analysé de nouveau, et le résultat n'est gardé que s'il est strictement meilleur.
+Annuler la réparation ?
+Chaque fichier modifié revient à son état d'avant, y compris tout changement fait depuis dans ces fichiers.
+Une réparation est en cours. Elle se termine dans un instant.
+Choisissez un pack, un monde ou un dossier de mods
+Choisissez un mod ou un pack
+Mods et packs (*.jar, *.zip)
+Tous les fichiers
+Windows n'a pas pu ouvrir sa boîte de dialogue
+Tapez ou collez le chemin ci-dessus, ou déposez le dossier ici.
+Ce chemin ne peut pas être lu comme du texte
+Le moteur est absent
+Un kebitx_ffi.dll à jour doit se trouver à côté de ce programme.
+Mémoire insuffisante
+Impossible de démarrer
+Voir ce qu'une réparation changerait. Rien n'est écrit.
+Sauvegarde d'abord chaque fichier, et garde le résultat seulement s'il est strictement meilleur.
+Rétablit chaque fichier modifié par la réparation.
+Copie tout le rapport, à coller où vous voulez.
+L'ouvre dans l'explorateur de fichiers.
+Moteur sémantique pour les packs Minecraft
+Grouper par cause
+Voir tous les résultats
+Concerne :
+Empaqueter...
+Enregistrer le paquet
+Il a 1 problème. Empaqueter quand même ?
+Il a {0} problèmes. Empaqueter quand même ?
+Ceux qui l'installent les auront aussi.
+Paquet créé
+Fichier : {0}
+Fichiers : {0}
+Impossible de créer le paquet
+Seul un pack ou un monde peut être empaqueté.
+Le paquet ne peut pas aller dans le dossier qu'il empaquette.
+Création du paquet...
+Met tout dans un fichier, prêt à ouvrir dans Minecraft.
+Pack Minecraft (*.mcpack)
+Monde Minecraft (*.mcworld)
+Les packs qu'il utilise depuis les dossiers du jeu ne sont pas inclus : qui l'ouvre en a aussi besoin.
+Inspecter le monde
+Lit tout ce qui est enregistré dans ce monde. Rien n'est écrit.
+Lecture du monde...
+Lecture du monde
+Monde : {0}
+Version : {0}
+Graine : {0}
+Surface
+Nether
+L'End
+Dimension {0}
+{0} : {1} chunks
+Blocs, sans l'air : {0}
+Entités de bloc : {0}
+Joueurs : {0}
+Taille : {0} sur disque ; décompressé, terrain {1}, entités {2}, entités de bloc {3}, joueurs {4}, autres {5}
+Ancien format, non compté : {0} parties de chunk
+Illisibles : {0}
+Impossible de lire le monde
+Bloc
+Entité
+Entité de bloc
+Types de bloc
+Types d'entité
+Types d'entité de bloc
+Quantité

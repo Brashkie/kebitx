@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod analyze;
+pub mod behavior;
 pub mod codec;
 pub mod compat;
 pub mod explain;
@@ -19,6 +20,7 @@ pub mod filesystem;
 pub mod findings;
 pub mod graph;
 pub mod graphics;
+pub mod i18n;
 pub mod image;
 pub mod json;
 pub mod manifest;

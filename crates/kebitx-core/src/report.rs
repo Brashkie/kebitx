@@ -13,6 +13,14 @@ pub enum Issue {
         owner: String,
         reference: String,
     },
+    /// Names something that does not exist, and the game carries on: that part
+    /// simply does nothing. The game's own files do this too (`entities/fox.json`
+    /// names a loot table it does not ship), so it is no break.
+    Dead {
+        kind: &'static str,
+        owner: String,
+        reference: String,
+    },
     /// Resolves only ignoring case: fine on Windows, pink on Android/iOS.
     CaseMismatch {
         owner: String,
@@ -84,6 +92,16 @@ pub struct AnalysisReport {
     // platform: resolves on Windows only
     pub case_mismatches: usize,
 
+    // behavior packs: what their files name (see `behavior`)
+    pub behavior_pack: bool,   // a behavior pack was checked
+    pub behavior_files: usize, // files read
+    pub behavior_refs: usize,  // references followed
+    pub behavior_resolved: usize,
+    pub behavior_external: usize, // the game's, or judged so (`minecraft:`)
+    pub behavior_unverified: usize, // may be in a pack that is not here
+    pub behavior_missing: usize,
+    pub behavior_dead: usize, // see `Issue::Dead`
+
     // files the engine could not read: reported, never silently skipped
     pub unreadable: usize,
 
@@ -102,6 +120,7 @@ impl AnalysisReport {
             + self.slots_missing
             + self.atlas_missing
             + self.atlas_empty
+            + self.behavior_missing
     }
 
     /// Fold another report's counts and issues into this one.
@@ -140,6 +159,14 @@ impl AnalysisReport {
         self.atlas_external += o.atlas_external;
         self.atlas_missing += o.atlas_missing;
         self.atlas_empty += o.atlas_empty;
+        self.behavior_pack |= o.behavior_pack;
+        self.behavior_files += o.behavior_files;
+        self.behavior_refs += o.behavior_refs;
+        self.behavior_resolved += o.behavior_resolved;
+        self.behavior_external += o.behavior_external;
+        self.behavior_unverified += o.behavior_unverified;
+        self.behavior_missing += o.behavior_missing;
+        self.behavior_dead += o.behavior_dead;
         self.case_mismatches += o.case_mismatches;
         self.unreadable += o.unreadable;
         self.issues.extend(o.issues.iter().cloned());

@@ -1,6 +1,6 @@
 # Kebitx roadmap
 
-Eight phases, plus tracks that run alongside them: platforms, building add-ons and security. Each one
+Nine phases, plus tracks that run alongside them: platforms, building add-ons and security. Each one
 keeps the same rule as today: **nothing is declared broken without enough evidence**, and every
 new capability arrives with fixtures that reproduce a real case.
 
@@ -372,22 +372,82 @@ Kebitx with a window, for people who do not use a terminal. The engine stays one
 what it proves and hold no rules of their own. Repairs stay as they are in the CLI: a preview
 first, a backup, and an undo.
 
-The language follows the same rule as the rest of the project: C, C++ or whatever helps, chosen
-by what it brings and measured, with the engine behind the C ABI.
+**No dependencies:** the apps are pure C and C++ on each system's own APIs, with no interface
+toolkit and no third-party library. The engine stays one, behind the C ABI. What cannot be avoided
+is a compiler, the system's own libraries, Objective-C to open a window on macOS, and Android's
+own tools to package an APK.
 
-- [ ] The whole engine through the C ABI. `kebitx-ffi` only exposes the analysis today; the apps
-  need Java analysis, compare, repair, migrate and build, with progress and cancellation
-- [ ] The interface technology, decided with a small prototype of each candidate (Qt in C++,
-  Dear ImGui, Kotlin on Android over JNI): binary size, start-up, memory on a real tablet, and how
-  much code the systems can share. The decision and its numbers are written here
-- [ ] Desktop first (Windows, Linux, macOS): open a pack, a mod or a mods folder, read the
-  report, preview a repair, apply it, undo it
+- [ ] The whole engine through the C ABI:
+  - [x] `kebitx_report`: anything `kebitx analyze` reads (Bedrock, Java packs and mods, mods folders),
+    as the same lines the CLI prints
+  - [x] repair: preview, apply and undo (the safe fixes), where applying only does what the
+    preview showed
+  - [x] progress and cancellation of the analysis: between mods in a mods folder, between stages
+    elsewhere
+  - [ ] compare, migrate and build
+- [ ] Desktop:
+  - [x] Windows, in C on Win32 (`apps/desktop`): open a folder or a file, or drop one, and read the
+    report; the analysis runs on its own thread
+  - [x] Preview a repair, apply it, undo it. A repair running cannot be cancelled, or closed
+  - [x] The app in the release's Windows archive, with nothing to install
+  - [x] Reading long reports: a filter, a verdict in colour, what does nothing apart from what is broken,
+    the report to copy, the folder to open, recent items, light and dark themes
+  - [x] Findings grouped by what to fix, and packing a pack or a world into one file
+  - [x] The logo, its colours and the icon
+  - [x] Seven languages for the window and the findings, from one catalogue in the engine
+  - [ ] A native speaker's review of each translation
+  - [ ] The reasons inside a repair's preview lines are still in English
+  - [ ] The Linux window: the new look, the languages and the filter
+  - [x] Finding what to open: a first screen with what can be checked on this computer (from the
+    engine, for every system's app), a path box, the system's file dialog, and shortcuts
+  - [ ] Linux, on the same core:
+    - [x] In C with the X11 protocol itself, no library but libc (`apps/desktop/src/x11.c`), with its own
+      folder browser, as X11 has no system dialog
+    - [ ] Seen working: CI runs it under Xvfb; it has never run on a real desktop
+    - [ ] In the release archives, once CI has shown it works
+    - [ ] Drag and drop; text that follows the desktop's scale
+  - [ ] macOS, on the same core
+- [x] Behavior packs checked, alone or as a world uses them, with the game's own files as the test
+  against false findings
+- [x] A world in the game's folders reads the packs its lists activate from those folders; a repair
+  stays in the world's own folder
+- [ ] Behavior pack to resource pack: an item's icon, a block's geometry and materials
+- [x] `kebitx analyze` on a folder that holds no pack: it says so, and fails
 - [ ] The engine as an Android library: `.so` files built with the NDK. `aarch64-linux-android`
-  already compiles in CI; the native kernels need that target added to their build
+  already compiles in CI
 - [ ] Android storage, checked on a real device before any screen is designed: what an app can
   read of the game's folders, and what must go through the system's file picker
-- [ ] APK, with layouts for phone and tablet
+- [ ] APK in C through `NativeActivity`, with layouts for phone and tablet
 - [ ] Tablet and phone performance measured on real devices, large packs included
+
+## Phase 9 — Kebitx as the whole toolbox
+
+The goal, with no hurry: nobody needs another tool for what can be done with add-ons and worlds, and
+kebitx owns all of it. Same rules as ever: own code, no third-party libraries, and nothing claimed
+that was not proven on real files.
+
+**Worlds, with no converter from anyone else.** Today that means [Chunker](https://github.com/HiveGamesOSS/Chunker),
+which converts terrain both ways but leaves most entities behind.
+
+- [x] Read a Bedrock world: its LevelDB and Mojang's compression, with the DEFLATE already here
+- [x] World inspector: dimensions, chunks, what blocks and entities it holds, what its size goes on
+- [ ] Compare it with a world's packs: entities and blocks saved that no pack here defines
+- [ ] Read a Java world: Anvil regions, on the NBT already here
+- [ ] A block table for both editions, from each game's own data, proven and not typed by hand
+- [ ] Convert terrain in both directions, with a report of what did not convert
+- [ ] Entities, signs, chests and inventories: where Chunker stops
+- [ ] Prove it: the same world converted and read back, block by block
+
+**More for packs and add-ons.**
+
+- [ ] Pack explorer: browse what a pack has, with textures and icons on screen, by the own decoder
+- [ ] Apply the optimizer: shrink oversized icons and textures, with a preview, a backup and an undo
+- [ ] Remove what is unused, as a repair: `kebitx repair` knows it, the app does not offer it yet
+- [ ] Compare two versions of a pack from the app
+- [ ] Migrate Java to Bedrock from the app, with its report and its proofs
+- [ ] Make a new pack from a template, with a valid manifest and new UUIDs
+- [ ] Install a pack or a world straight into the game's folders, with an undo
+- [ ] A report to hand over: HTML or JSON, from the app
 
 ## Platforms
 
@@ -431,10 +491,10 @@ result with the analysis engine, and exports it. The source is never modified.
 
 ## Performance
 
-Measure first, with criterion (`crates/kebitx-core/benches/engine.rs`) and `--timings`; keep a
+Measure first, with `cargo bench` (`crates/kebitx-core/benches/engine.rs`) and `--timings`; keep a
 change only if the report stays byte-for-byte the same.
 
-- [x] criterion benchmarks: JSON parsing, the game catalog, and every world stage
+- [x] Benchmarks: JSON parsing, the game catalog, and every world stage
   (`KEBITX_BENCH_WORLD` points them at a real world)
 - [x] `--timings` per stage; `KEBITX_THREADS` to compare with sequential
 - [x] Folder walking without a system call per entry (the largest single cost)
@@ -466,8 +526,8 @@ change only if the report stays byte-for-byte the same.
   - **Why no C:** libdeflate would save about 36 ms of the 350 ms index, because decoding
     already runs on every core. That is not worth a C toolchain on 7 targets. The serial
     phases, fixed in Rust, saved 170 ms.
-  - **The benchmarks stay:** `zig build bench-inflate` and `native/c/bench-inflate`.
-- [x] Native kernels where pictures are decoded (`--features native`, `crates/kebitx-native`,
+- [x] Native kernels where pictures are decoded (later reduced to the Zig one: see below;
+  `--features native`, `crates/kebitx-native`,
   `native/zig/kebitx-native`):
   - **The kernels:** libdeflate (C, vendored unmodified) for DEFLATE and zlib, and a Zig `@Vector`
     kernel for PNG unfiltering, one static library built by Zig for Cargo's target.
@@ -505,12 +565,22 @@ change only if the report stays byte-for-byte the same.
 - [x] The game's class index is lazy: it lists the `.jar`'s names and reads a class the first time
   something asks about it. One mod 316 → 165 ms, a mods folder 635 → 477 ms, reports unchanged.
   This replaces the idea of keeping the index on disk.
-- [x] The native kernels in the release's CLI, with a CI job that builds all 7 targets and runs the
-  differential tests where the binary can run. +28 KB on Windows; a mods folder 477 → 421 ms
+- [x] No third-party code, decided by measurement:
+  - **DEFLATE in safe Rust:** 187 → 313 MB/s with a fast loop over a careful path that decides every
+    error. Tables by doubling, kept per thread; copies by whole words.
+  - **libdeflate removed:** on real commands kebitx alone is within 4 % (Sodium 152 against 155 ms,
+    a mods folder 424 against 407 ms, `migrate` 3.21 against 3.09 s).
+  - **The same loop in Zig, not kept:** about 4 % over safe Rust, not worth the `unsafe` boundary.
+  - **criterion replaced** by a small harness in `benches/engine.rs`: `Cargo.lock` went from 82
+    packages to kebitx's own 9.
+  - **Release binaries in pure Rust:** the Zig PNG kernel is 1.9× faster in isolation, and on
+    `migrate` the same (3.19 against 3.20 s). It stays optional.
 - [ ] Next candidates, to be measured first:
   - `kebitx migrate`: reading the pack in place instead of extracting it (0.95 s left);
-  - a mods folder: each mod's classes are parsed for the context and again for its own check;
-  - DEFLATE: a fast decoding loop in Rust, against libdeflate's 3.2×.
+  - a mods folder: each mod's classes are parsed for the context and again for its own check.
+- [ ] Fewer outside tools in CI: `softprops/action-gh-release` could be the `gh` command runners
+  already have, and `dtolnay/rust-toolchain` could be `rustup`. What cannot go is the Rust compiler
+  and its standard library, and GitHub itself.
 
 ## Security — hardening against hostile input
 

@@ -1,7 +1,6 @@
-//! kebitx-native: the C ABI of kebitx's native kernels. One static library,
-//! built by Zig for the target Cargo builds for: the kernels written in Zig
-//! (here) and libdeflate (C, compiled by Zig's C compiler, called directly
-//! from Rust). Rust's `kebitx-native` crate is the only caller.
+//! kebitx-native: the C ABI of kebitx's native kernel, built by Zig as a static
+//! library for the target Cargo builds for. Rust's `kebitx-native` crate is the
+//! only caller.
 const unfilter = @import("unfilter.zig");
 
 /// PNG unfiltering. Returns 0, 1 for a filter byte above 4, 2 for sizes that
@@ -24,7 +23,7 @@ export fn kebitx_native_unfilter(
 
 /// The ABI version: Rust checks it at start-up.
 export fn kebitx_native_abi() c_uint {
-    return 1;
+    return 3;
 }
 
 test {

@@ -9,6 +9,7 @@
 pub mod analyze;
 pub mod class;
 pub mod code;
+pub mod describe;
 pub mod game;
 pub mod meta;
 pub mod mixin;

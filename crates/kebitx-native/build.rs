@@ -1,6 +1,5 @@
-//! With the `native` feature: builds `native/zig/kebitx-native` (the Zig
-//! kernels and libdeflate) with Zig, for the target Cargo builds for, and
-//! links it statically. Without it: nothing, and no Zig is needed.
+//! With the `native` feature: builds `native/zig/kebitx-native` with Zig, for
+//! the target Cargo builds for, and links it statically. Without it: nothing, and no Zig is needed.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -29,11 +28,7 @@ fn main() {
     let manifest =
         PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let native = manifest.join("../../native");
-    for dir in [
-        "zig/kebitx-native/src",
-        "zig/kebitx-native/build.zig",
-        "c/third_party/libdeflate",
-    ] {
+    for dir in ["zig/kebitx-native/src", "zig/kebitx-native/build.zig"] {
         println!("cargo:rerun-if-changed={}", native.join(dir).display());
     }
     let target = std::env::var("TARGET").expect("TARGET");

@@ -26,19 +26,26 @@ pub struct JavaAssets {
 impl JavaAssets {
     /// `KEBITX_JAVA_DIR`, else the launcher's usual folder for this system.
     pub fn discover() -> Option<Self> {
+        Self::launcher_dirs()
+            .into_iter()
+            .find_map(|d| Self::open(&d))
+    }
+
+    /// Where the launcher may keep the game: `KEBITX_JAVA_DIR`, or else the usual
+    /// folders for each system.
+    pub fn launcher_dirs() -> Vec<PathBuf> {
         if let Some(d) = std::env::var_os("KEBITX_JAVA_DIR") {
-            return Self::open(Path::new(&d));
+            return vec![PathBuf::from(d)];
         }
         let home = |v: &str| std::env::var_os(v).map(PathBuf::from);
-        let candidates = [
+        [
             home("APPDATA").map(|a| a.join(".minecraft")),
             home("HOME").map(|h| h.join(".minecraft")),
             home("HOME").map(|h| h.join("Library/Application Support/minecraft")),
-        ];
-        candidates
-            .into_iter()
-            .flatten()
-            .find_map(|d| Self::open(&d))
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     /// A launcher folder (the one holding `assets/`).

@@ -52,11 +52,15 @@ pub fn analyze(rp_root: &Path) -> AnalysisReport {
 }
 
 pub fn analyze_with(rp_root: &Path, catalog: &VanillaCatalog) -> AnalysisReport {
-    analyze_packs(&[rp_root.to_path_buf()], catalog)
+    let mut report = analyze_packs(&[rp_root.to_path_buf()], catalog)
         .into_iter()
         .next()
         .map(|(_, r)| r)
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if crate::behavior::is_behavior_pack(rp_root) {
+        report.absorb(&crate::behavior::check_alone(rp_root, catalog));
+    }
+    report
 }
 
 /// Resource packs inside a world folder, in either layout (see
@@ -85,9 +89,70 @@ pub fn is_resource_pack(dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Does this folder say it is a world?
+pub fn is_world(root: &Path) -> bool {
+    [
+        "level.dat",
+        "world_behavior_packs.json",
+        "world_resource_packs.json",
+    ]
+    .iter()
+    .any(|f| root.join(f).is_file())
+}
+
+/// Is this a folder with nothing of a pack or a world in it? Analysing one finds
+/// nothing wrong, and that must not read as a verdict on anything.
+pub fn holds_nothing(root: &Path) -> bool {
+    const PACK_PARTS: [&str; 26] = [
+        "manifest.json",
+        "animation_controllers",
+        "animations",
+        "attachables",
+        "biomes",
+        "blocks",
+        "dialogue",
+        "entities",
+        "entity",
+        "feature_rules",
+        "features",
+        "fogs",
+        "functions",
+        "items",
+        "loot_tables",
+        "materials",
+        "models",
+        "particles",
+        "recipes",
+        "render_controllers",
+        "scripts",
+        "sounds",
+        "spawn_rules",
+        "structures",
+        "texts",
+        "textures",
+    ];
+    root.is_dir()
+        && !is_world(root)
+        && !PACK_PARTS.iter().any(|part| root.join(part).exists())
+        && resource_packs_in(root).is_empty()
+}
+
 /// World mode entry point: every resource pack, resolved against the union.
 pub fn analyze_world_with(world: &Path, catalog: &VanillaCatalog) -> Vec<(String, AnalysisReport)> {
     analyze_packs(&resource_packs_in(world), catalog)
+}
+
+/// Every pack a world uses, wherever it is (`manifest::world_packs`): the resource
+/// packs, and then the behavior packs.
+pub fn analyze_world_all(world: &Path, catalog: &VanillaCatalog) -> Vec<(String, AnalysisReport)> {
+    let roots: Vec<PathBuf> = crate::manifest::world_packs(world)
+        .into_iter()
+        .filter(|p| p.manifest.kind == PackKind::Resources)
+        .map(|p| p.root)
+        .collect();
+    let mut reports = analyze_packs(&roots, catalog);
+    reports.extend(crate::behavior::check_world(world, catalog));
+    reports
 }
 
 /// Core: build the registries over ALL given packs (Index Pass), then resolve

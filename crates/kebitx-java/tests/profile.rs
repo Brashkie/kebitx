@@ -96,7 +96,7 @@ fn stages() {
 /// Writes every class entry of the game's `.jar` as stored (raw DEFLATE) to
 /// `KEBITX_CORPUS`: `count`, then per entry `packed_len`, `size`, `crc32`
 /// (u32 little-endian) and the bytes. The same input for every decoder
-/// measured (`zig build bench-inflate`).
+/// measured.
 #[test]
 #[ignore]
 fn write_inflate_corpus() {
@@ -170,4 +170,38 @@ fn write_inflate_corpus() {
         total as f64 / 1e6,
         total as f64 / 1e6 / el.as_secs_f64()
     );
+}
+
+/// One core, the corpus of `write_inflate_corpus` (`KEBITX_CORPUS`): each
+/// stream inflated to its known size and checked against its CRC-32, as every
+/// decoder is measured. Best of 5 rounds.
+#[test]
+#[ignore]
+fn inflate_corpus() {
+    use kebitx_core::codec::{crc32, inflate};
+    let Some(path) = std::env::var_os("KEBITX_CORPUS") else {
+        return;
+    };
+    let buf = std::fs::read(path).unwrap();
+    let le = |i: usize| u32::from_le_bytes(buf[i..i + 4].try_into().unwrap()) as usize;
+    let measure = |name: &str, f: &dyn Fn(&[u8], usize) -> Vec<u8>| {
+        let mut best = f64::MAX;
+        let mut total = 0;
+        for _ in 0..5 {
+            let t = Instant::now();
+            let (mut at, mut sum) = (4, 0);
+            for _ in 0..le(0) {
+                let (plen, size, crc) = (le(at), le(at + 4), le(at + 8) as u32);
+                let out = f(&buf[at + 12..at + 12 + plen], size);
+                assert_eq!(crc32(&out), crc);
+                sum += out.len();
+                at += 12 + plen;
+            }
+            best = best.min(t.elapsed().as_secs_f64());
+            total = sum;
+        }
+        eprintln!("{name}: {:.0} MB/s", total as f64 / 1e6 / best);
+    };
+    measure("fast loop", &|d, n| inflate::inflate(d, n).unwrap().0);
+    measure("careful", &|d, n| inflate::inflate_careful(d, n).unwrap().0);
 }

@@ -1,0 +1,29 @@
+{
+  "format_version": "1.21.0",
+  "minecraft:entity": {
+    "description": {
+      "identifier": "kx:mob",
+      "is_spawnable": true,
+      "animations": { "think": "controller.animation.kx.think", "wave": "animation.kx.wave" },
+      "scripts": { "animate": ["think", { "wave": "q.is_alive" }] }
+    },
+    "component_groups": { "angry": { "minecraft:attack": { "damage": 3 } } },
+    "components": {
+      "minecraft:loot": { "table": "loot_tables/kx/mob.json" },
+      "minecraft:equipment": { "table": "loot_tables/chests/simple_dungeon.json" },
+      "minecraft:timer": { "time": 1, "time_down_event": { "event": "kx:rage", "target": "self" } },
+      "minecraft:damage_sensor": { "triggers": { "on_damage": { "event": "kx:other_defines_it", "target": "other" } } },
+      "minecraft:environment_sensor": { "triggers": { "event": "minecraft:entity_spawned" } },
+      "minecraft:behavior.send_event": { "event_choices": [ { "sequence": [ { "event": "kx:for_others" } ] } ] },
+      "minecraft:transformation": { "into": "kx:mob<kx:rage>" },
+      "minecraft:spawn_entity": { "entities": { "spawn_entity": "minecraft:zombie", "spawn_item": "kx:gem" } }
+    },
+    "events": {
+      "minecraft:entity_spawned": { "sequence": [ { "add": { "component_groups": ["angry"] } }, { "trigger": "kx:rage" } ] },
+      "kx:rage": {
+        "remove": { "component_groups": ["angry"] },
+        "queue_command": { "command": ["function kx/hello", "say function not_a_reference"] }
+      }
+    }
+  }
+}

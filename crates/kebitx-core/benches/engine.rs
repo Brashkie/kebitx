@@ -1,4 +1,5 @@
-//! Benchmarks of the engine's hot paths, with criterion.
+//! Benchmarks of the engine's hot paths, with a harness of a few lines: each
+//! one runs for its time budget and reports its fastest and median run.
 //!
 //! ```text
 //! cargo bench -p kebitx-core                       # fixtures + synthetic input
@@ -9,7 +10,6 @@
 //! are tiny; the numbers that matter come from a real world. The game catalog
 //! benchmark runs only when an install is found.
 
-use criterion::{criterion_group, criterion_main, Criterion};
 use kebitx_core::analyze::analyze_world_with;
 use kebitx_core::compat::check_world;
 use kebitx_core::graphics;
@@ -19,7 +19,35 @@ use kebitx_core::passes::{duplicate_resource, unused_asset, unused_definition};
 use kebitx_core::vanilla::VanillaCatalog;
 use std::hint::black_box;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// Runs `f` for `budget` (at least 10 times) and prints its times; with `bytes`,
+/// the speed at the fastest run too.
+fn bench<T>(name: &str, budget: Duration, bytes: Option<usize>, mut f: impl FnMut() -> T) {
+    black_box(f()); // warm up
+    let start = Instant::now();
+    let mut runs = Vec::new();
+    while runs.len() < 10 || start.elapsed() < budget {
+        let t = Instant::now();
+        black_box(f());
+        runs.push(t.elapsed());
+    }
+    runs.sort();
+    let speed = bytes
+        .map(|b| {
+            format!(
+                "  {:.0} MB/s",
+                b as f64 / 1e6 / runs[0].as_secs_f64().max(1e-9)
+            )
+        })
+        .unwrap_or_default();
+    println!(
+        "{name:<34} fastest {:>12?}  median {:>12?}  ({} runs){speed}",
+        runs[0],
+        runs[runs.len() / 2],
+        runs.len()
+    );
+}
 
 fn world() -> PathBuf {
     std::env::var_os("KEBITX_BENCH_WORLD")
@@ -53,54 +81,41 @@ fn synthetic_model(cubes: usize) -> String {
     s
 }
 
-fn bench_json(c: &mut Criterion) {
+fn main() {
+    const WORLD: Duration = Duration::from_secs(5);
     let src = synthetic_model(5_000);
-    let mut g = c.benchmark_group("json");
-    g.throughput(criterion::Throughput::Bytes(src.len() as u64));
-    g.bench_function("parse model 5000 cubes", |b| {
-        b.iter(|| json::parse(black_box(&src)).unwrap())
-    });
-    g.finish();
-}
+    bench(
+        "json: parse model 5000 cubes",
+        Duration::from_secs(3),
+        Some(src.len()),
+        || json::parse(black_box(&src)).unwrap(),
+    );
 
-fn bench_catalog(c: &mut Criterion) {
-    let Some(install) = kebitx_core::vanilla::install_dir() else {
-        return;
-    };
-    let mut g = c.benchmark_group("catalog");
-    g.sample_size(10).measurement_time(Duration::from_secs(30));
-    g.bench_function("build from install", |b| {
-        b.iter(|| VanillaCatalog::from_install(black_box(&install)))
-    });
-    g.finish();
-}
+    if let Some(install) = kebitx_core::vanilla::install_dir() {
+        bench("catalog: build from install", WORLD, None, || {
+            VanillaCatalog::from_install(black_box(&install))
+        });
+    }
 
-fn bench_world(c: &mut Criterion) {
     let w = world();
     let catalog = VanillaCatalog::empty();
     let packs = packs_in(&w);
-    let mut g = c.benchmark_group("world");
-    g.sample_size(10).measurement_time(Duration::from_secs(20));
-    g.bench_function("references", |b| {
-        b.iter(|| analyze_world_with(black_box(&w), &catalog))
+    bench("world: references", WORLD, None, || {
+        analyze_world_with(black_box(&w), &catalog)
     });
-    g.bench_function("compatibility", |b| {
-        b.iter(|| check_world(black_box(&w), None))
+    bench("world: compatibility", WORLD, None, || {
+        check_world(black_box(&w), None)
     });
-    g.bench_function("graphics", |b| {
-        b.iter(|| graphics::check(black_box(&packs), &catalog))
+    bench("world: graphics", WORLD, None, || {
+        graphics::check(black_box(&packs), &catalog)
     });
-    g.bench_function("unused assets", |b| {
-        b.iter(|| unused_asset::run(black_box(&packs), &catalog))
+    bench("world: unused assets", WORLD, None, || {
+        unused_asset::run(black_box(&packs), &catalog)
     });
-    g.bench_function("unused definitions", |b| {
-        b.iter(|| unused_definition::run(black_box(&packs), &catalog))
+    bench("world: unused definitions", WORLD, None, || {
+        unused_definition::run(black_box(&packs), &catalog)
     });
-    g.bench_function("identical files", |b| {
-        b.iter(|| duplicate_resource::run(black_box(&packs)))
+    bench("world: identical files", WORLD, None, || {
+        duplicate_resource::run(black_box(&packs))
     });
-    g.finish();
 }
-
-criterion_group!(benches, bench_json, bench_catalog, bench_world);
-criterion_main!(benches);

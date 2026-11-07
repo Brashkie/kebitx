@@ -5,18 +5,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# With `native`, DEFLATE, zlib and PNG unfiltering go through kebitx-native
-# (libdeflate and Zig, built by Zig); without it, the library is pure Rust
-# with no dependency.
+# With `native`, PNG unfiltering goes through kebitx-native (Zig); without it,
+# the library is pure Rust. There is no third-party code either way.
 [features]
 native = ["dep:kebitx-native", "kebitx-native/native"]
 
 [dependencies]
 kebitx-native = { workspace = true, optional = true }
 
-# Benchmarks only.
-[dev-dependencies]
-criterion = "0.8"
 
 [[bench]]
 name = "engine"

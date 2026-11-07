@@ -1,14 +1,14 @@
-//! The native kernels against kebitx's Rust, on the same input.
+//! Every path through the codecs against the others, on the same input.
 //!
 //! `fixtures/deflate/streams.bin` holds 150 DEFLATE and zlib streams made by
 //! another compressor (Zig's, with dynamic Huffman codes, as real files have),
-//! each with its size and the CRC-32 of its data. In a pure-Rust build these
-//! tests check kebitx's own decoder on them. Built with `--features native`,
-//! `inflate`, `zlib_decompress` and `png::unfilter` go through libdeflate and
-//! Zig, and every output must be the very bytes of the Rust path — on valid
-//! streams, on every truncation and on corrupted bytes.
+//! each with its size and the CRC-32 of its data. The decoder's fast loop must
+//! answer exactly what its careful path answers: the same bytes, the same
+//! input used and the same error, on valid streams, on every truncation, on
+//! corrupted bytes and on random data. Built with `--features native`,
+//! `png::unfilter` goes through Zig, and must give the bytes of the Rust path.
 
-use kebitx_core::codec::inflate::{inflate_rust, zlib_decompress_rust};
+use kebitx_core::codec::inflate::{inflate_careful, zlib_decompress_careful};
 use kebitx_core::codec::png::{unfilter, unfilter_rust};
 use kebitx_core::codec::{crc32, inflate, zlib_decompress, NATIVE};
 
@@ -46,24 +46,16 @@ fn streams() -> Vec<Stream> {
     out
 }
 
-/// What the dispatching decoder (native when built in) answers.
-fn decode(s: &Stream, data: &[u8], limit: usize) -> Result<Vec<u8>, String> {
+/// Both paths give the very same answer, and it is returned.
+fn agree(s: &Stream, data: &[u8], limit: usize, what: &str) -> Result<Vec<u8>, String> {
     if s.zlib {
-        zlib_decompress(data, limit).map_err(|e| e.to_string())
+        let fast = zlib_decompress(data, limit);
+        assert_eq!(fast, zlib_decompress_careful(data, limit), "{what}");
+        fast.map_err(|e| e.to_string())
     } else {
-        inflate(data, limit)
-            .map(|(o, _)| o)
-            .map_err(|e| e.to_string())
-    }
-}
-
-fn decode_rust(s: &Stream, data: &[u8], limit: usize) -> Result<Vec<u8>, String> {
-    if s.zlib {
-        zlib_decompress_rust(data, limit).map_err(|e| e.to_string())
-    } else {
-        inflate_rust(data, limit)
-            .map(|(o, _)| o)
-            .map_err(|e| e.to_string())
+        let fast = inflate(data, limit);
+        assert_eq!(fast, inflate_careful(data, limit), "{what}");
+        fast.map(|(o, _)| o).map_err(|e| e.to_string())
     }
 }
 
@@ -72,36 +64,28 @@ fn every_stream_decodes_to_its_data_on_both_paths() {
     let all = streams();
     assert_eq!(all.len(), 150);
     for (i, s) in all.iter().enumerate() {
-        let rust = decode_rust(s, &s.packed, s.size).unwrap_or_else(|e| panic!("stream {i}: {e}"));
-        assert_eq!(
-            (rust.len(), crc32(&rust)),
-            (s.size, s.crc),
-            "stream {i}: Rust"
-        );
-        let used = decode(s, &s.packed, s.size).unwrap_or_else(|e| panic!("stream {i}: {e}"));
-        assert_eq!(used, rust, "stream {i}: native {NATIVE}");
-        if !s.zlib {
-            // the input consumed agrees too (zlib finds its checksum by it)
-            assert_eq!(
-                inflate(&s.packed, s.size).unwrap().1,
-                inflate_rust(&s.packed, s.size).unwrap().1,
-                "stream {i}: bytes used"
-            );
+        let what = format!("stream {i}");
+        let out = agree(s, &s.packed, s.size, &what).unwrap_or_else(|e| panic!("{what}: {e}"));
+        assert_eq!((out.len(), crc32(&out)), (s.size, s.crc), "{what}");
+        // room for less than the data needs is refused, at every small margin
+        for short in 1..=s.size.min(300) {
+            if short < 8 || short % 37 == 0 {
+                assert!(
+                    agree(s, &s.packed, s.size - short, &what).is_err(),
+                    "{what}"
+                );
+            }
         }
-        // one byte less of room than the data needs is refused on both
-        if s.size > 0 {
-            assert!(decode_rust(s, &s.packed, s.size - 1).is_err(), "stream {i}");
-            assert!(decode(s, &s.packed, s.size - 1).is_err(), "stream {i}");
-        }
+        // room for more changes nothing
+        assert_eq!(agree(s, &s.packed, s.size + 1000, &what).unwrap(), out);
     }
 }
 
-/// Damaged input: every prefix of some streams, and bytes changed across
-/// them. Whatever both accept must be the same bytes; neither may crash.
+/// Damaged input: prefixes of the streams, and bytes changed across them.
 #[test]
-fn damaged_streams_never_decode_differently() {
+fn damaged_streams_get_the_same_answer_on_both_paths() {
     let all = streams();
-    let (mut agree_ok, mut agree_err, mut only_one) = (0, 0, Vec::new());
+    let (mut decoded, mut refused) = (0, 0);
     for (i, s) in all.iter().enumerate().filter(|(i, _)| i % 7 == 0) {
         let mut cases: Vec<Vec<u8>> = (0..s.packed.len())
             .step_by((s.packed.len() / 40).max(1))
@@ -115,29 +99,44 @@ fn damaged_streams_never_decode_differently() {
             }
         }
         for d in cases {
-            let limit = s.size + 64;
-            match (decode_rust(s, &d, limit), decode(s, &d, limit)) {
-                (Ok(a), Ok(b)) => {
-                    assert_eq!(
-                        a, b,
-                        "stream {i}: both accept a damaged stream, with different bytes"
-                    );
-                    agree_ok += 1;
+            for limit in [s.size + 64, s.size / 2] {
+                match agree(s, &d, limit, &format!("stream {i}")) {
+                    Ok(_) => decoded += 1,
+                    Err(_) => refused += 1,
                 }
-                (Err(_), Err(_)) => agree_err += 1,
-                (a, b) => only_one.push((i, a.is_ok(), b.is_ok())),
             }
         }
     }
-    eprintln!(
-        "native {NATIVE}: {agree_ok} damaged inputs decoded the same, {agree_err} refused by both, {} accepted by one only",
-        only_one.len()
-    );
-    // a decoder may accept a damaged stream the other refuses (a changed
-    // byte can still be valid DEFLATE): what matters is that no input
-    // decodes to different bytes, checked above
-    if !NATIVE {
-        assert!(only_one.is_empty());
+    eprintln!("{decoded} damaged inputs decoded, {refused} refused, always the same way");
+    assert!(decoded > 0 && refused > 0);
+}
+
+/// Random data is mostly invalid, in every way a stream can be. A plain
+/// generator: the same cases on every run.
+#[test]
+fn random_data_gets_the_same_answer_on_both_paths() {
+    let mut x = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = move || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    let s = Stream {
+        zlib: false,
+        size: 0,
+        crc: 0,
+        packed: Vec::new(),
+    };
+    for case in 0..20_000 {
+        let len = (next() % 400) as usize;
+        let mut d: Vec<u8> = (0..len).map(|_| next() as u8).collect();
+        // a fixed-code block gets much further than random block types do
+        if case % 2 == 0 && !d.is_empty() {
+            d[0] = d[0] & !0b110 | 0b010;
+        }
+        let limit = (next() % 2000) as usize;
+        let _ = agree(&s, &d, limit, &format!("case {case}"));
     }
 }
 

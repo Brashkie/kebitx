@@ -1,0 +1,4 @@
+// The app's icon, for the title bar, the taskbar and Explorer.
+1 ICON "app.ico"
+// The logo in the side bar: raw pixels from tools/make_assets.ps1.
+2 RCDATA "logo96.bgra"

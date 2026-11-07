@@ -13,7 +13,7 @@ pub mod zip;
 pub use inflate::{inflate, zlib_decompress, InflateError};
 
 /// Whether DEFLATE, zlib and PNG unfiltering go through `kebitx-native`
-/// (libdeflate and Zig): the `native` feature.
+/// (Zig): the `native` feature.
 pub const NATIVE: bool = cfg!(feature = "native");
 
 /// CRC-32 (IEEE), as PNG and ZIP use it.

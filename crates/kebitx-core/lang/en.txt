@@ -1,0 +1,264 @@
+shows the missing texture; add {0}.png (or .tga), or point the entity at an existing texture
+the entity is invisible; add a model that defines {0}, or correct the identifier
+it never plays; define {0} in a RESOURCE pack's animations (a behavior-pack definition does not count), or remove it from the entity
+the entity does not render; define {0} in render_controllers/, or use one of the game's
+the entity may not render; use a game material (entity_alphatest, entity, ...) or define {0} in materials/
+the block or item shows the missing texture; add the image or correct the path in the atlas
+the render controller asks the entity for a name it does not declare; declare it in the entity, or change the controller
+the command fails, and the game may refuse the function that calls it; add {0}, or correct the name
+the pack's scripts do not load; add {0}, or correct the path
+the script does not load; add {0} to the dependencies in manifest.json
+it never runs; declare {0} in description.animations, or remove it from scripts.animate
+it never runs; define {0} in this BEHAVIOR pack (a resource-pack definition does not count here), or remove it from the entity
+the recipe is not loaded; add '{0}' to its key, or remove it from the pattern
+add what is referenced, or remove the reference
+nothing comes from it; add {0}, or correct the path, or remove it if nothing should
+that part of the event does nothing; define {0} in component_groups, or remove it from the event
+nothing happens at that moment; define {0} in events, or correct the name
+the packs here define others in its namespace, but not this one: it does nothing unless a pack that is not here defines it; define {0}, or correct the name
+works on Windows, missing texture on Android/iOS; write the reference as the file is named ({0}), or rename the file to {1}
+always the missing texture; give {0} a texture path, or remove the entry
+nothing inside was checked, and the game may reject it too; fix the syntax ({0})
+texture
+geometry
+animation
+animation controller
+render controller
+material
+atlas
+texture slot
+geometry slot
+material slot
+function
+script file
+script module
+animation name
+behavior animation
+behavior controller
+recipe key
+loot table
+trade table
+component group
+event
+item
+block
+entity
+feature
+wrong case
+empty texture set
+unreadable
+{0}: model {1} does not exist
+{0}: texture {1} does not exist
+{0}: a face asks for #{1}, which its chain never sets (the missing texture shows; used by {2})
+{0}: {1}x{2} does not divide into {3}x{4} frames (the game refuses it)
+{0}: unreadable ({1})
+{0}: not a PNG (the game checks the signature and refuses it)
+{0}: {1}x{2}, the game's is {3}x{4} (other proportions)
+{0}: {1} of {2} English keys missing (English shows)
+class {0} does not exist (used by {1}, {2} class(es))
+field {0}.{1} {2} does not exist (used by {3}, {4} class(es))
+method {0}.{1} {2} does not exist (used by {3}, {4} class(es))
+mixin {0} targets {1}, which does not exist
+mixin {0}: {1} {2} is not in {3} (Mixin refuses the class at start-up)
+mixin {0}: {1} finds no {2} (required: the game does not start)
+mixin {0}: {1} finds no {2} (not required: it silently does nothing)
+{0} is not in the game's .jar (used by {1}; may come from: {2})
+mod {0} is in {1} jars: {2} (the loader refuses to start)
+{0} ({1}) needs {2} {3}, which no mod here provides
+{0} ({1}) needs {2} {3}; here it is {4}
+{0} ({1}) declares it breaks {2} {3}; here: {4}
+{0} all @Overwrite {1}.{2}: only one change survives
+mods for {0} in one folder: each loader loads only its own
+{0}: no mod metadata (a library, or not a mod)
+Game: Java {0}
+Game: Java {0} (newest installed: not the version it asks for)
+Game: not installed, so nothing of the game was checked
+Game: not installed, so references to it were not checked
+Game: Bedrock {0}
+Mods: {0}
+Packs: {0}
+Entities: {0}
+Behavior references: {0}
+Not verifiable here: {0}
+Case mismatches: {0}
+Compatibility errors: {0}
+Unused assets: {0}
+References checked: {0}
+Classes: {0}
+{0} compatibility error(s) between the packs: run `kebitx analyze` for each one
+Java mods folder
+Java resource pack
+Java assets
+{0} mod: {1}
+Bedrock pack
+Bedrock world
+Cancelled
+No pack, world or mods here
+A pack has manifest.json, a world has level.dat, and a mods folder has .jar files.
+This folder holds 1 pack: open that one.
+This folder holds {0} packs: open one of them.
+World with no packs
+It carries none, and its lists activate none that could be found, so there is nothing to check.
+Behavior pack with nothing to check
+It names no file, item or event that could be followed.
+Reading the game
+Checking references
+Checking compatibility
+Looking for unused files
+Analysing
+Repairs exist for Bedrock packs and worlds, and for Java mods folders.
+Not a folder.
+Nothing kebitx can repair safely here.
+Every file is backed up first, and the result stays only if it is strictly better.
+Repair preview
+Nothing was changed
+The folder changed since the preview. Preview the repair again.
+The repair failed
+Problems: {0} before, {1} after.
+Repair kept
+Backup: {0}
+Repair rolled back
+It was not strictly better, so every file is as it was.
+Repair undone
+Restored {0} file(s).
+Undo failed
+Edit {0}: {1} -> {2} ({3}x). {4}
+Delete {0}. {1}
+Take out {0}: {1}
+Home
+Open folder...
+Open file...
+Analyse
+Preview repair
+Apply repair...
+Undo repair...
+Show folder
+Copy report
+Copied
+Cancel
+Theme
+Dark
+Light
+System
+Type or paste the path of a pack, a world, a mod or a mods folder
+Filter the list: a name, a file, a kind of problem (Ctrl+F)
+Nothing in the list matches the filter.
+Nothing found here. Choose a folder or a file above.
+No findings to list.
+Type
+Finding
+Name
+Folder
+All
+Problems
+Do nothing
+Notes
+Worlds
+Behavior packs
+Resource packs
+Problem
+Change
+New problem
+Note
+Does nothing
+Recent
+World
+Behavior pack
+Dev behavior pack
+Resource pack
+Dev resource pack
+Mods folder
+Java mods
+What do you want to check?
+These are on this computer: double-click one, or press Enter. For anything else, type or paste a path, choose a folder or a file, or drop one on this window.
+Nothing to check in the game's usual places. Type or paste a path, choose a folder or a file, or drop one on this window.
+Analysing...
+Planning the repair...
+Repairing...
+Undoing the repair...
+Looking for Minecraft...
+Cancelling...
+Analysis cancelled
+Nothing was changed.
+The engine could not read that
+Check the path: it must be a folder, or a .jar or .zip file.
+The engine could not plan a repair
+Nothing to repair
+Repair preview: 1 change. Nothing has been written.
+Repair preview: {0} changes. Nothing has been written.
+The repair gave no answer
+The undo gave no answer
+Check the folder: the engine gave no answer.
+OK: nothing proven broken
+1 problem
+{0} problems
+1 that does nothing
+{0} that do nothing
+Step {0} of {1}: {2}
+Apply the changes in the preview?
+Every file is backed up first. The folder is analysed again, and the result stays only if it is strictly better.
+Undo the repair?
+Every file it changed goes back to how it was before, including any change made to those files since.
+A repair is running. It will finish in a moment.
+Choose a pack, a world or a mods folder
+Choose a mod or a pack
+Mods and packs (*.jar, *.zip)
+All files
+Windows could not open its file dialog
+Type or paste the path above, or drop the folder here.
+That path cannot be read as text
+The engine is missing
+A current kebitx_ffi.dll must be next to this program.
+Out of memory
+Could not start
+See what a repair would change. Nothing is written.
+Backs up every file first, and keeps the result only if it is strictly better.
+Puts back every file the repair changed.
+Copies the whole report, to paste anywhere.
+Opens it in the file explorer.
+Semantic engine for Minecraft packs
+Group by cause
+Show all findings
+Affects:
+Package...
+Save the package
+It has 1 problem. Package it anyway?
+It has {0} problems. Package it anyway?
+Whoever installs it will have them too.
+Package created
+File: {0}
+Files: {0}
+Could not create the package
+Only a pack or a world can be packaged.
+The package cannot go inside the folder it packs.
+Creating the package...
+Puts everything in one file, ready to open in Minecraft.
+Minecraft pack (*.mcpack)
+Minecraft world (*.mcworld)
+The packs it uses from the game's folders are not inside: whoever opens it needs them too.
+Inspect world
+Reads everything saved in this world. Nothing is written.
+Reading the world...
+Reading the world
+World: {0}
+Version: {0}
+Seed: {0}
+Overworld
+Nether
+The End
+Dimension {0}
+{0}: {1} chunks
+Blocks, without air: {0}
+Block entities: {0}
+Players: {0}
+Size: {0} on disk; unpacked, terrain {1}, entities {2}, block entities {3}, players {4}, other {5}
+Old format, not counted: {0} chunk parts
+Not readable: {0}
+Could not read the world
+Block
+Entity
+Block entity
+Block types
+Entity types
+Block entity types
+Amount

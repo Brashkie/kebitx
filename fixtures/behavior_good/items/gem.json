@@ -1,0 +1,1 @@
+{ "format_version": "1.21.0", "minecraft:item": { "description": { "identifier": "kx:gem" }, "components": { "minecraft:entity_placer": { "entity": "kx:mob" }, "minecraft:block_placer": { "block": "kx:ore" }, "minecraft:repairable": { "repair_items": [ { "items": ["kx:gem", "minecraft:stick", "stick", "from_another_pack:thing"] } ] } } } }

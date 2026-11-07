@@ -1,6 +1,6 @@
 [package]
 name = "kebitx-native"
-description = "Optional native kernels for kebitx (Zig and C, built by Zig), each checked against the Rust they replace"
+description = "Optional native kernel for kebitx: PNG unfiltering in Zig"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

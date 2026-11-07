@@ -1,8 +1,10 @@
 <div align="center">
 
+<img src="media/kebitx.png" alt="Kebitx" width="360">
+
 # Kebitx
 
-**A semantic engine for Minecraft Bedrock add-ons: analyse, repair, compare, build and migrate from Java.**
+**A semantic engine for Minecraft add-ons and worlds: analyse, repair, compare, build, inspect and migrate from Java.**
 
 [![CI](https://github.com/Brashkie/kebitx/actions/workflows/ci.yml/badge.svg)](https://github.com/Brashkie/kebitx/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Brashkie/kebitx?label=release)](https://github.com/Brashkie/kebitx/releases/latest)
@@ -35,6 +37,9 @@ then is it exported to the game or packed as a `.mcaddon`.
 - [Commands](#commands)
 - [What it checks](#what-it-checks)
 - [Migrating a Java resource pack](#migrating-a-java-resource-pack)
+- [Behavior packs](#behavior-packs)
+- [Worlds](#worlds)
+- [Desktop app](#desktop-app)
 - [Platforms](#platforms)
 - [Performance](#performance)
 - [Validated on a real world](#validated-on-a-real-world)
@@ -56,11 +61,16 @@ then is it exported to the game or packed as a `.mcaddon`.
 - **Java → Bedrock migration is proven, not guessed.** Pixels, sound files, English strings and
   Mojang's own converted pairs decide what converts.
 - **It is fast.** A 29-pack world with 13 000+ files is analysed in about 0.5 s.
-- **It has no dependencies.** It is std-only Rust with no `unsafe` (except in the C ABI crate),
-  and runs on Windows, Linux, macOS and Android.
-- **Optional native kernels.** With `--features native`, Zig builds libdeflate (C) and a Zig
-  SIMD kernel into kebitx for decoding. They are measured faster, and checked byte for byte
-  against the Rust they replace.
+- **Behavior packs and worlds too.** Entities, items, recipes, functions and scripts are followed as
+  far as they can be proven, and a Bedrock world's saved data is read with kebitx's own reader of the
+  game's database, without ever writing to it.
+- **A desktop app in seven languages.** No toolkit and nothing to install: it finds what is on your
+  computer, groups findings by what to fix, repairs with a preview and an undo, and makes a pack or a
+  world one file for the game.
+- **It is all its own code.** `Cargo.lock` lists no third-party crate and the repository holds no
+  third-party code: JSON, ZIP, DEFLATE, PNG, LevelDB and the class-file reader are written here, in
+  std-only Rust with no `unsafe` (except in the C ABI crate). It runs on Windows, Linux, macOS
+  and Android.
 
 ## Installation
 
@@ -79,6 +89,9 @@ Download the archive for your system from the
 | macOS Apple Silicon | `kebitx-<version>-aarch64-apple-darwin.tar.gz` |
 | macOS Intel | `kebitx-<version>-x86_64-apple-darwin.tar.gz` |
 
+The Windows archive also has `kebitx-app.exe`, the desktop app. Keep it next to `kebitx_ffi.dll`, and
+nothing needs installing.
+
 Every release has a `SHA256SUMS` file to verify the downloads.
 
 ### From source
@@ -92,9 +105,9 @@ cargo install --path crates/kebitx-cli     # installs `kebitx` into ~/.cargo/bin
 kebitx --version
 ```
 
-With [Zig 0.14](https://ziglang.org/download/) on the `PATH`, add `--features native` to build in
-the native kernels: libdeflate (C) and Zig SIMD, for faster decoding with the same results. See
-*Native kernels* under *Performance*.
+With [Zig 0.14](https://ziglang.org/download/) on the `PATH`, `--features native` builds in an
+optional PNG kernel, with the same results. The prebuilt binaries do not use it: see
+*Native kernel* under *Performance*.
 
 ## Quick start
 
@@ -123,10 +136,11 @@ verdict that needs the game says so instead of guessing.
 | `kebitx compare <before> <after> [--all]` | What is new, fixed, lost or removed between two versions | 0 OK, 1 regression |
 | `kebitx build [project] [--target …] [--watch]` | Builds an add-on through filters, gated by the analysis | 0 built, 1 failed |
 | `kebitx migrate <java pack, .jar or .zip> [--out <dir>] [--all]` | Java → Bedrock: report, then convert what is proven | 0 clean result |
+| `kebitx world <Bedrock world> [--all]` | What a world has saved: chunks, blocks, entities, block entities, players, size. Never writes | |
 | `kebitx catalog [--list stems\|flipbooks\|tiles\|sounds]` | What the installed game provides, as Kebitx sees it | |
 | `kebitx --version`, `kebitx --help` | Version and usage | |
 
-Exit code 2 always means bad usage or a path that does not exist.
+Exit code 2 always means bad usage, a path that does not exist, or a folder that holds no pack, world or mods.
 
 ## Where it is going
 
@@ -142,15 +156,16 @@ The long-term goal is a tool that goes from **detecting** problems to **diagnosi
 | **Java → Bedrock migration** | Convert what can be converted, flag what cannot, and produce a task list for what needs rebuilding. Whole worlds stay with Chunker; kebitx checks what it produces |
 | **Java Edition (Phase 7, started)** | Analyse Java packs and mods for their own sake: broken models and textures (working today), mod bytecode checked against the installed game, loader dependencies, profiles (JFR, spark) attributed to mods. A runtime of its own with a JIT is research with conditions, not a plan |
 | **Building** | `kebitx build`: filters over a scratch copy, the analysis as a gate, export to the game's development folders or to `.mcpack` / `.mcaddon` |
-| **Applications (Phase 8, planned)** | Desktop, Android (APK) and tablet apps over the same engine through its C ABI. The interface technology will be decided by prototypes and measurements |
+| **Worlds (Phase 9, started)** | Read a world with own code (done for Bedrock), then convert between editions with no other tool, entities included |
+| **Applications (Phase 8, started)** | Desktop, Android (APK) and tablet apps over the same engine through its C ABI. The interface technology will be decided by prototypes and measurements |
 
 The identity does not change along the way: **explain why something looks broken, never modify it
 blindly.** See [ROADMAP.md](ROADMAP.md) for the phases and their order.
 
 ## What it checks
 
-Working today (Cargo workspace; the library and the executable use the standard library only —
-criterion is a development dependency of the benchmarks; `unsafe` forbidden):
+Working today (Cargo workspace; everything uses the standard library only, the benchmarks
+included; `unsafe` forbidden):
 
 - comment- and trailing-comma-tolerant JSON parser, with a nesting limit so hostile input is an
   error, never a crash
@@ -731,11 +746,108 @@ as the specification allows; 41 of Bedrock's own textures needed one or the othe
 the game's PNGs, those 41 included, it gives the same RGBA pixels as javax.imageio, the JDK's
 own decoder.
 
-`cargo test --workspace` shows 183 green (in the pure and the native build) (plus the Zig consumer's own `zig build test`), among them the core's fixture tests, the repair tests, the migration tests and the builder's
+`cargo test --workspace` shows 229 green (in the pure and the native build) (plus the Zig consumer's own `zig build test`), among them the core's fixture tests, the repair tests, the migration tests and the builder's
 end-to-end tests (a real filter program, every export target, the safety rule). Fixture tests use an **empty** vanilla
 catalog, or a fake install built from `fixtures/fake_install`, so their verdict does not
 depend on which Minecraft is installed on the machine. That is also why `horse_pack_broken` is
 broken in the tests but clean from the command line: the texture it lacks is one the game ships.
+
+## Behavior packs
+
+`kebitx analyze` checks a behavior pack alone, or those a world uses against each other. It
+follows what the files name, in entities, items, blocks, recipes, loot and trade tables, functions,
+spawn rules, feature rules, animations and scripts.
+
+| Verdict | Means | What falls here |
+|---|---|---|
+| **MISSING** | Broken: it counts, and the exit code says so | A script file or a script's relative import, a game module not asked for in the manifest, a function, a server animation or controller, a recipe symbol with no key |
+| **CASE** | Works on Windows, not on Android or iOS | Any of those, or a table, written with the wrong case |
+| **DEAD** | It names what does not exist, and that part does nothing. Reported, not counted | A component group, an event, a loot or trade table; an item, block, entity or feature in a namespace the packs here own |
+| **Unverified** | Cannot be known from here. Only counted | A namespace no pack here owns, or anything a dependency that cannot be found could provide |
+
+A world in the game's `minecraftWorlds` is read as the game loads it: the packs in its folder, and
+those its lists activate from the game's folders (with what they depend on). A repair only writes
+to the packs in its own folder: installed ones are shared with other worlds. A copy of a world
+elsewhere has only what it carries.
+
+Why two levels: the game's own entities name groups, events and loot tables that do not exist, and
+run (`entities/fox.json` names `loot_tables/entities/fox.json`). A test runs the checker over the
+game's files, and none of them may read as broken. `minecraft:` items, blocks and entities are never
+judged: the game ships no list of them.
+
+Not checked: what depends on a resource pack (icons, geometry), custom components in scripts, and
+what scripts do when they run. Severity was decided from the files, not by playing.
+
+## Worlds
+
+`kebitx world <folder>` reads what a Bedrock world has saved: its chunks by dimension, how many of
+each block, entity and block entity, its players, and what its size goes on. The app does the same
+with **Inspect world**. It is kebitx's own reader of the game's LevelDB, checksums and Mojang's
+compression included, with no library. It only reads: a world is never written. What cannot be read
+is counted and said, and a format it does not know is never taken for empty.
+
+It does not convert anything yet. This is the first step to converting worlds between editions with
+kebitx's own code: see Phase 9 in [ROADMAP.md](ROADMAP.md). It has been tried on one real world, in two
+versions of the game, where every block counted adds up to exactly what its chunks must hold.
+
+## Desktop app
+
+An early desktop app for Windows comes in the Windows archive of each release, and lives in
+`apps/desktop`. It is C on Win32, with no toolkit and no
+third-party library: 390 KB, plus the engine. It shows the same findings as `kebitx analyze`, with
+its progress and a Cancel button.
+
+Its first screen lists what it can check on this computer: resource and behavior packs, worlds that
+use packs or have saved data, and the Java mods folder and resource packs. Double-click one. For anything else,
+type or paste a path (with autocomplete), use Windows' own file dialog, which has the game's folders
+in its side bar, or drop a folder on the window. When nothing could be checked, it says so and why:
+it never reads as "OK". That covers a folder that holds no pack, a world with no packs, and a
+behavior pack that names nothing.
+
+What was opened lately comes first on that screen. Each report opens with its verdict in colour and
+tiles that count each kind of finding; a click on a tile narrows the list, and so does the filter. A
+finding's details say what is wrong and, apart, how to fix it. Findings come grouped by what to fix,
+what touches most first: thirty entities naming one missing texture are one row, with all thirty in
+its details. The next step stands out: first **Preview repair**, then **Apply repair**. **Copy report**
+puts everything on the clipboard, to paste anywhere, **Show folder** opens it in Explorer, and
+**Package** makes a pack a `.mcpack` and a world a `.mcworld`, one file ready to open in the game, and
+**Inspect world** shows what a world has saved.
+
+It speaks English, Spanish, Portuguese, French, German, Russian and Chinese, findings included. It
+starts in your system's language, and the choice stays. The window has a dark and a light theme, or
+follows the system's, and every look is drawn on Windows' real controls, so the keyboard and screen
+readers work as anywhere.
+
+The texts live in `crates/kebitx-core/lang`, one file per language, with each line the translation of
+the same line of `en.txt`; a test refuses a file with a line or a value missing. They were written
+without a native review: corrections are welcome. The CLI stays in English.
+
+The app keeps its language, its theme and what was opened lately in `%APPDATA%\kebitx`.
+
+Keys: Ctrl+O a folder, Ctrl+Shift+O a file, Ctrl+L the path, Ctrl+F the filter, Enter to go, F5 to
+analyse again, Esc to cancel or to clear the filter, Ctrl+C on a row to copy it, Alt+Home for the first
+screen.
+
+On Linux, `apps/desktop/src/x11.c` is a simpler version with no library but libc: it speaks the X11
+protocol itself, and has its own folder browser, but neither this look nor the languages. It has not
+run on a real desktop yet: CI runs it under Xvfb, and it is not in the release archives.
+
+It repairs with the same rules as the CLI, with the safe fixes only (wrong case in a Bedrock pack or
+world, duplicate jars in a mods folder): a preview that writes nothing, a backup, a second analysis
+that decides, and an undo. It applies only what the preview showed: if the folder changed since,
+it refuses and asks for a new preview.
+
+To build it yourself:
+
+```bash
+cargo build --release -p kebitx-ffi
+cd apps/desktop
+zig build --release=safe     # Zig is the C compiler here
+cp ../../target/release/kebitx_ffi.dll zig-out/bin/
+zig-out/bin/kebitx-app.exe
+```
+
+Linux, macOS and Android come next: see Phase 8 in [ROADMAP.md](ROADMAP.md).
 
 ## Platforms
 
@@ -765,7 +877,7 @@ systems are proven to build, and their test runs are CI's.
 
 ## Performance
 
-Measured with [criterion](https://crates.io/crates/criterion) on the reference world (29 packs,
+Measured on the reference world (29 packs,
 13 000+ files) on a 12-thread machine, each stage in isolation:
 
 | Stage | Before | After |
@@ -820,8 +932,8 @@ and the real mods above:
 | reading the classes from the `.jar` (warm cache, 1 core) | 1.24 s | 0.44 s |
 | DEFLATE + CRC-32 on the same 11 383 streams (1 core) | 701 ms | 334 ms |
 | the game's class index, built whole (all cores) | 430 ms | 182 ms, now lazy |
-| `kebitx analyze` on a mods folder (4 mods) | 2.23 s | 0.48 s |
-| `kebitx analyze` on one mod (Sodium) | 1.07 s | 0.17 s |
+| `kebitx analyze` on a mods folder (4 mods) | 2.23 s | 0.42 s |
+| `kebitx analyze` on one mod (Sodium) | 1.07 s | 0.16 s |
 
 Where the time went, and what fixed it:
 
@@ -843,91 +955,84 @@ Where the time went, and what fixed it:
 - **Then the whole index stopped being built.** A mod names a small part of the game, so the
   index now lists the `.jar`'s names and reads a class the first time something asks about it.
   A test checks every class of every installed game: its entry name is the class it holds.
-  One mod (Lithium): 316 → 165 ms. A mods folder: 635 → 477 ms, or 421 ms with the native
-  kernels.
+  One mod (Lithium): 316 → 165 ms. A mods folder: 635 → 477 ms.
 
 The reports are identical before and after: the same 3 refusals and 17 failures on the bad set,
 and the same 2982 and 3594 references for Sodium and Lithium.
 
-**Why not Zig, or C?** A native decoder was the obvious candidate, so every option was measured
-on exactly the same input: the 11 383 class files of the 26.3 `.jar`, each inflated to its
-known size and checked against its CRC-32. The benchmarks are `zig build bench-inflate` (in `native/zig/kebitx-native`) and
-`native/c/bench-inflate`; the C libraries were built with `zig cc -O3`.
+### DEFLATE: why kebitx has its own
 
-| Decoder | Language | Time | Speed |
-|---|---|---|---|
-| `std.compress.flate` | Zig | 728 ms | 82 MB/s |
-| kebitx, before | Rust | 701 ms | 85 MB/s |
-| **kebitx, now** | Rust | **320 ms** | **187 MB/s** |
-| zlib 1.3.2 | C | 230 ms | 260 MB/s |
-| libdeflate 1.26 | C | 100 ms | 597 MB/s |
+Every decoder was measured on the same input: the 11 383 class files of the 26.3 `.jar`, each
+inflated to its known size and checked against its CRC-32, on one core.
 
-Zig's decoder brought nothing: the time was in the algorithm, not the language. libdeflate is
-3.2× faster than kebitx's decoder, so the rule asked the next question: how much of a real run
-is decoding? Measured phase by phase, decoding was 52 ms of the game's 350 ms index, because it
-already runs on every core. libdeflate would have saved about 36 ms, for a C toolchain on every
-one of the 7 release targets and an `unsafe` boundary.
+| Decoder | Language | Speed |
+|---|---|---|
+| `std.compress.flate` | Zig | 82 MB/s |
+| kebitx, first version | Rust | 85 MB/s |
+| kebitx, with a lookup table | Rust | 187 MB/s |
+| zlib 1.3.2 | C | 260 MB/s |
+| **kebitx, now** | **Rust, no `unsafe`** | **313 MB/s** |
+| the same loop without bounds checks | Zig | about 4 % more |
+| libdeflate 1.26, called from kebitx | C | 436 MB/s |
 
-The phases that ran in order cost far more, and fixing them in Rust saved 170 ms first. Both
-benchmarks stay in the repository, so the decision can be measured again.
+libdeflate reached 597 MB/s in its own C benchmark, with no allocation around each call. 436 MB/s
+is the figure on the same harness as kebitx's 313 MB/s.
 
-### Native kernels: where C and Zig do pay
+What the time went to, measured before each change:
 
-Decoding *pictures* is a different workload. `kebitx migrate` decodes the game's 8 218 Bedrock
-textures and the pack's own, and there:
+- **Building the Huffman tables** was 28 % of the decoding. Now each code is written once and
+  the table grows by doubling, and the tables are kept per thread.
+- **Bit-by-bit refills and one symbol per loop.** The fast loop refills 64 bits at once and takes
+  up to three literals per round.
+- **Copies.** Most matches are short, so the first words are copied with no branch between them.
+- **Bounds checks were not the problem:** the same loop in Zig, without them, gained about 4 %.
 
-- zlib is 43 % of decoding a PNG;
-- undoing the PNG filters and converting to RGBA is the rest.
+Anything not simple (the end of a block, a long code, an error, the output's limit) puts the state
+back as it was before that round, and a careful path that checks everything decides. So the fast
+loop has no verdict of its own. `crates/kebitx-core/tests/native.rs` proves both paths give the
+same bytes, the same input used and the same error, on 150 streams from another compressor, on
+damaged streams and on 20 000 random inputs.
 
-Each kernel was measured against kebitx's best Rust on the same input, with the same output:
+libdeflate is still faster in isolation, but on real commands the difference is small:
 
-| Kernel | Rust | Native | |
-|---|---|---|---|
-| DEFLATE / zlib | 187 MB/s | **libdeflate (C): 597 MB/s** | 11 383 class files of Java 26.3 |
-| PNG unfiltering | 651 MB/s (a loop per filter) | **Zig `@Vector`: 1 228 MB/s** (baseline x86-64, as released; 1 418 on this CPU) | 4 747 textures of Bedrock, 186 MB |
+| Command | kebitx alone | with libdeflate and the Zig kernel |
+|---|---|---|
+| `analyze` on one mod (Sodium) | 152 ms | 155 ms |
+| `analyze` on a mods folder (4 mods) | 424 ms | 407 ms |
+| `migrate` on Faithful 32x | 3.21 s | 3.09 s |
 
-Zig brings something stable Rust does not have here: portable SIMD in the language
-(`@Vector`); Rust's `std::simd` is nightly only. libdeflate is the fastest DEFLATE decoder
-there is, and its decompression side is vendored unmodified (`native/c/third_party/libdeflate`,
-MIT, with its version and sha256).
+That is not worth third-party C on 7 targets, so it was removed.
+
+### Native kernel: PNG unfiltering in Zig
+
+One optional kernel remains, and it is kebitx's own code. Undoing the PNG filters with Zig's
+`@Vector` runs at 1 228 MB/s on baseline x86-64, against 651 MB/s for the specialised Rust, on
+4 747 textures of Bedrock (186 MB). Zig brings portable SIMD here; Rust's `std::simd` is nightly only.
 
 ```bash
 cargo build --release -p kebitx-cli --features native    # needs Zig 0.14 on the PATH (or ZIG=...)
 ```
 
-How it fits together:
+On whole commands it does not show: `migrate` on Faithful 32x takes 3.19 s without it and 3.20 s
+with it. So **the prebuilt binaries are pure Rust**, and need no Zig to build. The feature stays
+for where unfiltering dominates, and is tested in CI on Windows, Linux and macOS.
 
-- **The library:** `native/zig/kebitx-native/build.zig` builds one static library, the Zig
-  kernels plus libdeflate compiled by Zig's C compiler, for whatever target Cargo builds for.
-  Zig cross-compiles it as well as it compiles it: ARM64 Linux, macOS and Windows GNU were
-  built from Windows.
 - **The boundary:** `crates/kebitx-native` holds it, and it is the second crate with `unsafe`.
-  Without the feature it holds nothing, and kebitx is pure Rust that needs no Zig.
-- **In the release:** since 2.5.0, the prebuilt CLI includes the kernels (28 KB more
-  on Windows) and `kebitx --version` says so. CI builds all 7 targets this way first. The C ABI
-  library stays pure Rust.
-- **The tests:** differential tests in `crates/kebitx-core/tests/native.rs` decode 150 DEFLATE and
-  zlib streams from another compressor (`fixtures/deflate/streams.bin`, written by
-  `zig build gen-streams`, the same bytes on every system) and every PNG filter case.
-  - Native and Rust must give identical bytes.
-  - On 1 559 damaged inputs, 344 decode the same, 1 215 are refused by both, and none is
-    accepted by only one.
-  - All 175 tests pass in both builds, including the real games: every class file of 26.3
-    through libdeflate, with its CRC, and the pixel proofs of the migrator.
+  Without the feature it holds nothing.
+- **The proof:** `crates/kebitx-core/tests/native.rs` compares both paths on every filter case, and
+  the reports are identical in both builds.
 
-In a real run: decoding the 8 218 Bedrock textures goes from 1.22 s to 0.87 s on one core
-(−29 %). On `kebitx migrate` the native kernels alone took Faithful 32x from 6.9 s to 6.4 s. The
-rest of that command was not decoding; measured stage by stage, it was fixed in Rust:
+### `kebitx migrate`, stage by stage
 
 | `kebitx migrate` on Faithful 32x (3 953 textures) | Before | After |
 |---|---|---|
 | extracting the `.zip` | 1.84 s | 0.95 s |
 | the game's 8 218 textures (`BedrockPixels`) | 1.47 s | 0.62 s |
 | matching the pack's pictures (`inspect`) | 2.15 s | 0.49 s |
-| **the whole command** | **6.9 s** | **3.5 s** (3.4 s native) |
+| **the whole command** | **6.9 s** | **3.2 s** |
 
-The full report (`--all`, 5 104 lines) is identical before and after, in both builds. What was
-found in each stage:
+The full report (`--all`, 5 104 lines) is identical before and after. What was found in each
+stage:
 
 - **Extracting:** files were created one after the other. Now every name and the total size
   are checked first, from the archive's directory, so hostile archives are still refused before
@@ -975,22 +1080,18 @@ C ABI, and only once a measurement says they are needed.
 |---|---|---|
 | **Rust** | Semantic core: indexes, reference resolution, dependency graph, diagnostics, repairs, orchestration of native modules | Always — this is the default home for any new code |
 | **Zig** | Selective native processing: binary buffers, geometry transforms, format conversion | When a benchmark shows a hot path worth it. Also as the cross-compilation toolchain (Linux / macOS / Android from Windows) and as the reference consumer of the C ABI |
-| **C / C++** | Integration with the existing graphics ecosystem: mature image and model libraries, SDKs | When a proven C/C++ library does the job and reimplementing it would be worse |
+| **C / C++** | The apps of Phase 8: kebitx's own code on each system's APIs, with the engine behind the C ABI | For interfaces. No third-party library, and no toolkit |
 
 Zig is **not** automatically faster than Rust or C++. Performance depends on the algorithm,
 memory layout, libraries and measurements. A module moves to native code only with a benchmark
 in hand — otherwise the project ends up as three duplicated implementations.
 
-That rule has been applied twice, with Zig, zlib and libdeflate measured on the same input:
+That rule has been applied, and it also works in reverse: code leaves when it stops paying.
 
-- **For the Java analysis, no native code was added.** Zig's DEFLATE decoder was no faster than
-  kebitx's, and decoding was 15 % of the run. Fixing the algorithm and the serial phases in Rust
-  saved more.
-- **For pictures, native code was added, behind the optional `native` feature.**
-  - libdeflate (C): 3.2× kebitx's DEFLATE.
-  - A Zig `@Vector` kernel: 1.9× kebitx's PNG unfiltering on baseline x86-64.
-  - Both are built by Zig, and the differential tests prove they give the same bytes as the Rust
-    they replace.
+- **DEFLATE:** libdeflate (C) was added when it was 3.2× faster than kebitx's decoder. Once
+  kebitx's own was within 4 % on real commands, libdeflate was removed.
+- **PNG unfiltering:** a Zig `@Vector` kernel is 1.9× faster in isolation, and stays as an option.
+  It does not show on whole commands, so the prebuilt binaries are pure Rust.
 
 See *Performance*.
 
@@ -1006,18 +1107,18 @@ kebitx/
 │   ├── kebitx-build/       # the builder: project file, filters, gate, export, ZIP writer
 │   ├── kebitx-repair/      # repairs: plan, backup, surgical edits, second analysis, rollback
 │   ├── kebitx-migrate/     # Java → Bedrock: report, textures, sounds, models, data, mods
+│   ├── kebitx-world/       # worlds: own reader of Bedrock's LevelDB, and what is saved in it
 │   ├── kebitx-java/        # Java Edition: the installed game, analysis of packs and mods
 │   ├── kebitx-ffi/         # the C ABI (include/kebitx.h); a crate with `unsafe`
-│   ├── kebitx-native/      # optional native kernels (`native` feature): the other crate with `unsafe`
+│   ├── kebitx-native/      # optional native kernel (`native` feature): the other crate with `unsafe`
 │   └── kebitx-cli/         # the `kebitx` executable (analyze, build, repair, compare, migrate)
+├── apps/
+│   └── desktop/            # the desktop app: C on the system's own APIs, no toolkit (Windows today)
 ├── native/
-│   ├── zig/
-│   │   ├── kebitx-native/  # the native kernels: Zig (PNG unfiltering, SIMD) + libdeflate, one static library
-│   │   ├── kebitx-check/   # the C ABI's reference consumer, in Zig
-│   │   └── cross/          # zig cc as the linker for Linux x86-64 / ARM64 builds
-│   └── c/
-│       ├── third_party/libdeflate/  # libdeflate 1.26, decompression side, unmodified (MIT)
-│       └── bench-inflate/  # zlib and libdeflate measured on the same input
+│   └── zig/
+│       ├── kebitx-native/  # the optional native kernel: PNG unfiltering with SIMD
+│       ├── kebitx-check/   # the C ABI's reference consumer, in Zig
+│       └── cross/          # zig cc as the linker for Linux x86-64 / ARM64 builds
 ├── fixtures/               # synthetic packs and worlds, shared by every crate
 ├── .github/workflows/      # ci.yml (every push and pull request), release.yml (tags)
 ├── CHANGELOG.md
@@ -1035,7 +1136,9 @@ zig-out/bin/kebitx-check ../../../target/release/kebitx_ffi.dll <pack or world>
 ```
 
 `crates/kebitx-ffi/include/kebitx.h` is the whole contract: `kebitx_analyze(path)` returns a JSON
-report (counts, and every issue with its confidence and fix), freed with `kebitx_string_free`.
+report (counts, and every issue with its confidence and fix), freed with `kebitx_string_free`. It also
+has what the apps use: reports with the lines people read, repairs, packaging, the inspector and the
+languages.
 
 Cross-compiling the CLI with Zig as the linker:
 
@@ -1061,8 +1164,9 @@ Every folder appears when it has code in it, never empty in advance.
 | Phase 3 | `kebitx-repair`: safe, verifiable repairs (done: case, unused) |
 | Phase 4 | `kebitx-migrate`: Java → Bedrock (done: report, textures, pixels, flipbooks, sounds, languages, models, data, mods) |
 | Phase 7 | `kebitx-java`: Java Edition as a target (started: the installed game, analysis of packs and mods) |
+| Phase 9 | `kebitx-world`: worlds with no other tool (started: the reader of Bedrock's LevelDB and the inspector) |
 | Phase 6 | `kebitx-ffi`: the C ABI, the only crate where `unsafe` may exist; `native/zig/` as its first consumer (done) |
-| A benchmark asks for it | `native/zig/…` or `native/cpp/…` for that one hot path |
+| A benchmark asks for it | `native/zig/…` for that one hot path, and only while it pays |
 
 Diagnostics stay in `kebitx-core` until the graphics diagnostics of Phase 2 make a separate
 analyzer crate worth it. Visual-regression and migration fixtures go under `fixtures/` when
@@ -1085,8 +1189,9 @@ grouped in bones. Metrics are about cubes, bones and texture space — not polyg
 
 **Java → Bedrock.** Textures, models, sounds, recipes and data can often be converted or adapted.
 Code written for Forge or Fabric cannot be converted automatically: its behaviour has to be
-reimplemented. Java shaders have no general Bedrock equivalent. Whole *worlds* are already
-handled by tools such as Chunker; Kebitx focuses on mods, resource packs, models and addons.
+reimplemented. Java shaders have no general Bedrock equivalent. Converting whole *worlds*
+is still a job for tools such as Chunker: Kebitx reads Bedrock worlds today, and converting them with
+its own code is the goal of Phase 9.
 
 ## Contributing
 

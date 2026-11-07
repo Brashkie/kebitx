@@ -1,0 +1,9 @@
+{
+  "format_version": 2,
+  "header": { "name": "Broken behavior pack", "uuid": "11111111-1111-4111-8111-1111111111aa", "version": [1, 0, 0], "min_engine_version": [1, 21, 0] },
+  "modules": [
+    { "type": "data", "uuid": "11111111-1111-4111-8111-1111111111ab", "version": [1, 0, 0] },
+    { "type": "script", "language": "javascript", "uuid": "11111111-1111-4111-8111-1111111111ac", "version": [1, 0, 0], "entry": "scripts/gone.js" }
+  ],
+  "dependencies": [ { "module_name": "@minecraft/server", "version": "1.19.0" } ]
+}

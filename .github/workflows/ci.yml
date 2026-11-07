@@ -1,5 +1,5 @@
 # Every change: formatting, lint, every test on three systems (pure Rust and
-# with the native kernels), a short fuzzing
+# with the native kernel), a short fuzzing
 # pass, the documentation, every shipped target, and the Zig consumer.
 # The tests do not need Minecraft: fixtures use an empty or fake game catalog,
 # and the tests against the real installed games skip themselves where there is none.
@@ -134,12 +134,73 @@ jobs:
           set -e
           # the fixture has one empty texture set and one case mismatch
           test $code -eq 1 || { echo "::error::expected exit 1 from the fixture, got $code"; exit 1; }
+      - name: The desktop app builds, and draws a real report
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          zig build test
+          zig build --release=safe
+          cp ../../target/release/kebitx_ffi.dll zig-out/bin/
+          # it fails when the window comes out blank
+          zig-out/bin/kebitx-app.exe ../../fixtures/atlas_pack --capture "$RUNNER_TEMP/app.bmp"
+          test -s "$RUNNER_TEMP/app.bmp"
+          # its first screen, with no game on the runner
+          zig-out/bin/kebitx-app.exe --capture "$RUNNER_TEMP/home.bmp"
+          test -s "$RUNNER_TEMP/home.bmp"
+          # preview, apply and undo through the window, on a copy: the very bytes come back
+          cp -r ../../fixtures/atlas_pack "$RUNNER_TEMP/pack"
+          zig-out/bin/kebitx-app.exe "$RUNNER_TEMP/pack" --steps pau --capture "$RUNNER_TEMP/flow.bmp"
+          diff -r ../../fixtures/atlas_pack "$RUNNER_TEMP/pack"
+          ls "$RUNNER_TEMP/pack.kebitx-backups"
 
-  # kebitx built with its native kernels (libdeflate in C and the Zig PNG
-  # kernel, both built by Zig): every test again, which includes the
-  # differential tests that compare each native output with the Rust one
+  # the Linux app against a real X server with no screen: it draws, and repairs
+  linux-app:
+    name: Linux app (X11)
+    needs: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+      - name: A real X server, and the fonts every desktop has
+        run: sudo apt-get update && sudo apt-get install -y xvfb xfonts-base
+      - name: Build the C ABI
+        run: cargo build --release -p kebitx-ffi
+      - name: Build the app
+        working-directory: apps/desktop
+        run: |
+          zig build --release=safe
+          cp ../../target/release/libkebitx_ffi.so zig-out/bin/
+          ldd zig-out/bin/kebitx-app
+      - name: It draws its first screen and a report, and repairs through the window
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          mkdir -p "$RUNNER_TEMP/shots"
+          run() { xvfb-run -a -s "-screen 0 1280x1024x24" zig-out/bin/kebitx-app "$@"; }
+          # it fails when the picture comes out blank
+          run --capture "$RUNNER_TEMP/shots/home.bmp"
+          run ../../fixtures/atlas_pack --steps s --capture "$RUNNER_TEMP/shots/report.bmp"
+          # preview, apply and undo, on a copy: the very bytes come back
+          cp -r ../../fixtures/atlas_pack "$RUNNER_TEMP/pack"
+          run "$RUNNER_TEMP/pack" --steps pau --capture "$RUNNER_TEMP/shots/flow.bmp"
+          diff -r ../../fixtures/atlas_pack "$RUNNER_TEMP/pack"
+          ls "$RUNNER_TEMP/pack.kebitx-backups"
+      - name: What it looks like
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-app-screens
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
+
+  # kebitx built with its optional native kernel (PNG unfiltering in Zig):
+  # every test again, which includes the comparison with the Rust path
   native:
-    name: Native kernels (${{ matrix.os }})
+    name: Native kernel (${{ matrix.os }})
     needs: fmt
     strategy:
       fail-fast: false
@@ -164,6 +225,9 @@ jobs:
       - name: Zig unit tests
         working-directory: native/zig/kebitx-native
         run: zig build test
+      - name: The desktop app's report reader
+        working-directory: apps/desktop
+        run: zig build test
       - name: The DEFLATE fixture is what its generator writes
         shell: bash
         working-directory: native/zig/kebitx-native
@@ -171,14 +235,13 @@ jobs:
           zig build gen-streams -- "$RUNNER_TEMP/streams.bin"
           cmp "$RUNNER_TEMP/streams.bin" ../../../fixtures/deflate/streams.bin \
             || { echo "::error::fixtures/deflate/streams.bin differs from zig build gen-streams"; exit 1; }
-      - name: Clippy with the native kernels
+      - name: Clippy with the native kernel
         run: cargo clippy --workspace --all-targets --features kebitx-core/native -- -D warnings
-      - name: Every test with the native kernels
+      - name: Every test with the native kernel
         run: cargo test --workspace --features kebitx-core/native --no-fail-fast
 
   # the release's own builds, on the release's own runners: every target it
-  # ships must build and link with the native kernels, and give the same bytes
-  # as the Rust code, before a tag is ever pushed
+  # ships must build, link and run before a tag is ever pushed
   release-targets:
     name: Release build (${{ matrix.target }})
     needs: fmt
@@ -191,9 +254,9 @@ jobs:
           - { target: aarch64-unknown-linux-gnu,  os: ubuntu-22.04-arm }
           - { target: x86_64-unknown-linux-musl,  os: ubuntu-22.04,     musl: true }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-22.04-arm, musl: true }
-          - { target: aarch64-apple-darwin,       os: macos-15 }
+          - { target: aarch64-apple-darwin,       os: macos-latest }
           # built on Apple Silicon: it links here, and does not run
-          - { target: x86_64-apple-darwin,        os: macos-15,         cross: true }
+          - { target: x86_64-apple-darwin,        os: macos-latest,     cross: true }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -203,22 +266,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-${{ matrix.target }}
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.14.1
       - name: musl tools
         if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Build the CLI with the native kernels
-        run: cargo build --release --locked -p kebitx-cli --features native --target ${{ matrix.target }}
-      - name: It runs, and says what it was built with
+      - name: Build the CLI
+        run: cargo build --release --locked -p kebitx-cli --target ${{ matrix.target }}
+      - name: It runs
         if: ${{ !matrix.cross }}
         shell: bash
         run: |
           bin="target/${{ matrix.target }}/release/kebitx"
           [[ "${{ matrix.target }}" == *windows* ]] && bin="$bin.exe"
-          "$bin" --version | grep -F "native kernels"
+          "$bin" --version
           "$bin" analyze fixtures/horse_pack
-      - name: The native kernels against the Rust code, on this target
+      - name: The codecs, on this target
         if: ${{ !matrix.cross }}
-        run: cargo test --release --locked -p kebitx-core --features native --test native --target ${{ matrix.target }}
+        run: cargo test --release --locked -p kebitx-core --test native --target ${{ matrix.target }}

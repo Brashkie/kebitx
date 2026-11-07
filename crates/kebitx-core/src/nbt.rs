@@ -56,6 +56,18 @@ pub fn parse_level_dat(bytes: &[u8]) -> Result<Nbt, &'static str> {
     r.payload(10, 0)
 }
 
+/// One named compound at the start of `bytes`, with no file header, and how many
+/// bytes it took: how the game saves things inside a world's database.
+pub fn read_compound(bytes: &[u8]) -> Result<(Nbt, usize), &'static str> {
+    let mut r = Reader { b: bytes, i: 0 };
+    if r.u8()? != 10 {
+        return Err("not a compound");
+    }
+    r.string()?;
+    let nbt = r.payload(10, 0)?;
+    Ok((nbt, r.i))
+}
+
 struct Reader<'a> {
     b: &'a [u8],
     i: usize,

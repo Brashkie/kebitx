@@ -11,4 +11,8 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+kebitx-build.workspace = true
 kebitx-core.workspace = true
+kebitx-java.workspace = true
+kebitx-repair.workspace = true
+kebitx-world.workspace = true

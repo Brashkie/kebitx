@@ -1,0 +1,1 @@
+{ "format_version": "1.10.0", "animations": { "animation.kx.wave": { "timeline": { "0.0": ["/function kx/other"] } } } }

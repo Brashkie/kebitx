@@ -10,13 +10,13 @@ name = "kebitx"
 path = "src/main.rs"
 
 [features]
-# DEFLATE, zlib and PNG unfiltering in native code (libdeflate and Zig, built
-# by Zig 0.14); off by default: kebitx is pure Rust then
+# PNG unfiltering in Zig, built by Zig 0.14 for the target. Off by default.
 native = ["kebitx-core/native"]
 
 [dependencies]
 kebitx-core.workspace = true
 kebitx-build.workspace = true
 kebitx-repair.workspace = true
+kebitx-world.workspace = true
 kebitx-migrate.workspace = true
 kebitx-java.workspace = true

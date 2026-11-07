@@ -122,6 +122,9 @@ pub fn jars_in(dir: &Path) -> Vec<std::path::PathBuf> {
     out
 }
 
+/// Told what comes next, how many are done and of how many; `false` stops.
+pub type Progress<'a> = &'a mut dyn FnMut(&str, usize, usize) -> bool;
+
 /// The jars of a folder, opened, with what each declares.
 pub struct ModFolder {
     sources: Vec<(String, Option<Source>)>,
@@ -178,7 +181,16 @@ impl ModFolder {
 
     /// Every jar against `jar` (the game) and each other.
     pub fn analyze(&self, jar: Option<&JavaJar>) -> SetReport {
-        analyze_folder(&self.sources, &self.metas, jar)
+        match self.analyze_with(jar, &mut |_, _, _| true) {
+            Some(report) => report,
+            None => unreachable!("nothing asked it to stop"),
+        }
+    }
+
+    /// The same, telling `go` what comes next (what it is, how many are done,
+    /// of how many). When `go` answers `false` it stops, and returns `None`.
+    pub fn analyze_with(&self, jar: Option<&JavaJar>, go: Progress) -> Option<SetReport> {
+        analyze_folder(&self.sources, &self.metas, jar, go)
     }
 }
 
@@ -186,11 +198,17 @@ fn analyze_folder(
     sources: &[(String, Option<Source>)],
     metas: &[Option<ModMeta>],
     jar: Option<&JavaJar>,
-) -> SetReport {
+    go: Progress,
+) -> Option<SetReport> {
+    // each jar is read once, then checked once
+    let total = sources.len() * 2;
     // what loads together: every mod's classes and the ids it provides
     let index = jar.map(GameIndex::from_jar);
     let mut ctx = Context::default();
-    for ((_, s), m) in sources.iter().zip(metas) {
+    for (at, ((name, s), m)) in sources.iter().zip(metas).enumerate() {
+        if !go(name, at, total) {
+            return None;
+        }
         if let (Some(s), Some(m)) = (s, m) {
             let mut ids = vec![m.id.clone()];
             ids.extend(m.provides.iter().cloned());
@@ -325,21 +343,21 @@ fn analyze_folder(
         }
     }
 
-    let mods = sources
-        .iter()
-        .zip(metas)
-        .filter_map(|((name, s), meta)| {
-            let s = s.as_ref()?;
-            Some(SetMod {
-                jar: name.clone(),
-                meta: meta.clone(),
-                report: analyze_in(s, jar, index.as_ref(), &ctx),
-            })
-        })
-        .collect();
-    SetReport {
+    let mut mods = Vec::new();
+    for (at, ((name, s), meta)) in sources.iter().zip(metas).enumerate() {
+        if !go(name, sources.len() + at, total) {
+            return None;
+        }
+        let Some(s) = s else { continue };
+        mods.push(SetMod {
+            jar: name.clone(),
+            meta: meta.clone(),
+            report: analyze_in(s, jar, index.as_ref(), &ctx),
+        });
+    }
+    Some(SetReport {
         game: jar.map(|j| (j.id.clone(), j.exact)),
         mods,
         findings: findings.into_iter().collect(),
-    }
+    })
 }

@@ -4,11 +4,13 @@ mod java;
 
 use kebitx_build::watch::Outcome;
 use kebitx_build::{BuildOptions, Project, Target};
-use kebitx_core::analyze::{analyze_with, analyze_world_with, is_resource_pack, resource_packs_in};
+use kebitx_core::analyze::{
+    analyze_with, analyze_world_all, holds_nothing, is_resource_pack, is_world, resource_packs_in,
+};
 use kebitx_core::compat::{check_world, module_inventory, CompatIssue, CompatReport, Severity};
 use kebitx_core::explain;
 use kebitx_core::graphics::{self, GraphicsIssue};
-use kebitx_core::manifest::{pack_at, packs_in, parse_version, Pack};
+use kebitx_core::manifest::{pack_at, parse_version, world_packs, Pack};
 use kebitx_core::optimize;
 use kebitx_core::passes::unused_definition::{self, DefKind};
 use kebitx_core::passes::{duplicate_resource, unused_asset};
@@ -25,6 +27,7 @@ const USAGE: &str = "usage:
   kebitx repair <pack_or_world_path> [--fix case,unused] [--apply]
   kebitx repair <mods_folder> [--fix duplicates,incompatible] [--apply] [--game <version>]
   kebitx repair --undo <backup_folder>
+  kebitx world <bedrock_world_folder> [--all]
   kebitx compare <before> <after> [--all]
   kebitx migrate <java_pack_folder_or_jar> [--out <new_folder>] [--all]
   kebitx catalog [--list stems|flipbooks|tiles|sounds]
@@ -35,7 +38,7 @@ fn main() {
     match args.get(1).map(String::as_str) {
         Some("--version" | "-V") => {
             let native = if kebitx_core::codec::NATIVE {
-                " (native kernels: libdeflate, Zig)"
+                " (native kernel: Zig)"
             } else {
                 ""
             };
@@ -48,6 +51,7 @@ fn main() {
         }
         Some("build") => exit(run_build(&args[2..])),
         Some("repair") => exit(run_repair(&args[2..])),
+        Some("world") => exit(run_world(&args[2..])),
         Some("compare") => exit(run_compare(&args[2..])),
         Some("migrate") => exit(run_migrate(&args[2..])),
         Some("catalog") => exit(run_catalog(&args[2..])),
@@ -87,6 +91,13 @@ fn main() {
                 VanillaCatalog::discover().unwrap_or_else(VanillaCatalog::empty)
             });
 
+            if holds_nothing(root) {
+                eprintln!("{path}: no pack, world or mods here.");
+                eprintln!(
+                    "A pack has manifest.json, a world has level.dat, and a mods folder has .jar files."
+                );
+                exit(2);
+            }
             println!("Kebitx Analysis — {path}");
             println!();
             print_catalog(&catalog);
@@ -98,13 +109,7 @@ fn main() {
             // packs that are missing. Anything else (a loose pack without a
             // manifest, as an author's work folder often is) is analysed as a
             // single pack rather than refused.
-            let is_world = [
-                "level.dat",
-                "world_behavior_packs.json",
-                "world_resource_packs.json",
-            ]
-            .iter()
-            .any(|f| root.join(f).is_file());
+            let is_world = is_world(root);
             let is_pack = is_resource_pack(root);
             let single = !is_world && (is_pack || resource_packs_in(root).is_empty());
             let game = if catalog.is_empty() {
@@ -115,7 +120,7 @@ fn main() {
             let extra_packs = if single {
                 vec![pack_at(root)]
             } else {
-                packs_in(root)
+                world_packs(root)
             };
 
             // Every stage only reads the catalog and the files: they run at the
@@ -130,7 +135,7 @@ fn main() {
                         } else if is_pack {
                             Vec::new()
                         } else {
-                            analyze_world_with(root, &catalog)
+                            analyze_world_all(root, &catalog)
                         }
                     })
                 });
@@ -160,7 +165,7 @@ fn main() {
             } else {
                 let mut total = AnalysisReport::default();
                 println!(
-                    "  World: {} resource packs, resolved against their union",
+                    "  World: {} packs, each resolved against the union of its kind",
                     packs.len()
                 );
                 println!();
@@ -822,6 +827,90 @@ fn run_compare(args: &[String]) -> i32 {
 /// failed, 2 usage.
 /// `kebitx repair <mods folder>`: preview by default; `--apply` takes the
 /// jars out, analyses again and keeps the result only if strictly better.
+/// What a Bedrock world has saved. Reads, and never writes.
+fn run_world(args: &[String]) -> i32 {
+    let show_all = args.iter().any(|a| a == "--all");
+    let Some(path) = args.iter().find(|a| !a.starts_with("--")) else {
+        eprintln!("{USAGE}");
+        return 2;
+    };
+    let w = match kebitx_world::bedrock::inspect(Path::new(path), &mut |_, _| true) {
+        Ok(Some(world)) => world,
+        Ok(None) => return 2,
+        Err(why) => {
+            eprintln!("{path}: {why}");
+            return 2;
+        }
+    };
+    let mb = |bytes: u64| bytes as f64 / (1024.0 * 1024.0);
+    println!("World: {}", w.name);
+    if let Some(version) = &w.version {
+        println!("  Last opened with:  {version}");
+    }
+    if let Some(seed) = w.seed {
+        println!("  Seed:              {seed}");
+    }
+    for (number, d) in &w.dimensions {
+        let name = match number {
+            0 => "Overworld".to_string(),
+            1 => "Nether".to_string(),
+            2 => "The End".to_string(),
+            n => format!("Dimension {n}"),
+        };
+        println!(
+            "  {name:18} {} chunks, {} chunk parts, x {}..{}, z {}..{} (in chunks)",
+            d.chunks, d.subchunks, d.bounds.min_x, d.bounds.max_x, d.bounds.min_z, d.bounds.max_z
+        );
+    }
+    println!("  Players:           {}", w.players);
+    println!(
+        "  Size:              {:.1} MB on disk; unpacked, terrain {:.1} MB, entities {:.1} MB, block entities {:.1} MB, players {:.1} MB, other {:.1} MB",
+        mb(w.disk_bytes),
+        mb(w.sizes.terrain),
+        mb(w.sizes.entities),
+        mb(w.sizes.block_entities),
+        mb(w.sizes.players),
+        mb(w.sizes.other)
+    );
+    let list = |title: &str, counts: &std::collections::BTreeMap<String, u64>| {
+        let mut sorted: Vec<(&String, &u64)> = counts.iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        println!();
+        println!(
+            "  {title}: {} kinds, {} in all",
+            sorted.len(),
+            counts.values().sum::<u64>()
+        );
+        let limit = if show_all { usize::MAX } else { 15 };
+        for (name, count) in sorted.iter().take(limit) {
+            println!("    {count:>12}  {name}");
+        }
+        if sorted.len() > limit {
+            println!("    ... and {} more (use --all)", sorted.len() - limit);
+        }
+    };
+    list("Blocks", &w.blocks);
+    list("Entities", &w.entities);
+    list("Block entities", &w.block_entities);
+    println!();
+    if w.old_subchunks > 0 {
+        println!(
+            "  {} chunk parts in an old format were not counted.",
+            w.old_subchunks
+        );
+    }
+    let d = &w.damage;
+    if w.unreadable + (d.tables + d.blocks + d.missing_tables) as u64 > 0 {
+        println!(
+            "  Not readable: {} values, {} tables, {} blocks, {} tables missing.",
+            w.unreadable, d.tables, d.blocks, d.missing_tables
+        );
+    } else {
+        println!("  Everything was read: no damage.");
+    }
+    0
+}
+
 fn run_repair(args: &[String]) -> i32 {
     use kebitx_repair::{Change, Fix};
     if args.first().map(String::as_str) == Some("--undo") {
@@ -1238,6 +1327,25 @@ fn print_catalog(c: &VanillaCatalog) {
 }
 
 fn print_report(r: &AnalysisReport) {
+    if r.behavior_pack {
+        println!("  Behavior files read: {}", r.behavior_files);
+        println!("  References followed: {}", r.behavior_refs);
+        println!("    resolved:          {}", r.behavior_resolved);
+        println!(
+            "    the game's:        {}  (`minecraft:` names are not judged)",
+            r.behavior_external
+        );
+        println!(
+            "    unverified:        {}  (may be in a pack that is not here)",
+            r.behavior_unverified
+        );
+        println!("    missing:           {}", r.behavior_missing);
+        println!(
+            "    dead:              {}  (names what does not exist; that part does nothing)",
+            r.behavior_dead
+        );
+        println!();
+    }
     println!("  Entities:            {}", r.entities);
     println!();
     println!("  Textures declared:   {}", r.textures_declared);
@@ -1337,6 +1445,11 @@ fn print_issues(r: &AnalysisReport, show_all: bool) {
                 owner,
                 reference,
             } => println!("    MISSING  {kind:20} {owner} -> {reference}"),
+            Issue::Dead {
+                kind,
+                owner,
+                reference,
+            } => println!("    DEAD     {kind:20} {owner} -> {reference}"),
             Issue::CaseMismatch {
                 owner,
                 reference,
@@ -1357,7 +1470,9 @@ fn print_issues(r: &AnalysisReport, show_all: bool) {
 
 fn summary(r: &AnalysisReport) -> usize {
     let broken = r.broken();
-    if broken == 0 && r.case_mismatches == 0 {
+    if r.behavior_pack && r.behavior_refs == 0 && broken == 0 && r.case_mismatches == 0 {
+        println!("  Nothing to check: this behavior pack names no file, item or event.");
+    } else if broken == 0 && r.case_mismatches == 0 {
         println!("  OK — no broken references.");
     } else {
         if broken > 0 {
@@ -1369,6 +1484,12 @@ fn summary(r: &AnalysisReport) -> usize {
                 r.case_mismatches
             );
         }
+    }
+    if r.behavior_dead > 0 {
+        println!(
+            "  {} dead reference(s): they name what does not exist, and that part does nothing.",
+            r.behavior_dead
+        );
     }
     // Case mismatches fail the run too: the world is played from phones.
     broken + r.case_mismatches

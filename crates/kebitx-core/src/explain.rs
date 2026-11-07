@@ -10,6 +10,7 @@
 
 use crate::compat::CompatIssue;
 use crate::graphics::GraphicsIssue;
+use crate::i18n::{tf, tr};
 use crate::optimize::OptIssue;
 use crate::report::Issue;
 
@@ -48,30 +49,45 @@ pub fn issue(i: &Issue) -> Explanation {
     use Confidence::*;
     match i {
         Issue::Missing { kind, reference, .. } => match *kind {
-            "texture" => ex(High, format!("shows the missing texture; add {reference}.png (or .tga), or point the entity at an existing texture")),
-            "geometry" => ex(High, format!("the entity is invisible; add a model that defines {reference}, or correct the identifier")),
+            "texture" => ex(High, tf("shows the missing texture; add {0}.png (or .tga), or point the entity at an existing texture", &[reference])),
+            "geometry" => ex(High, tf("the entity is invisible; add a model that defines {0}, or correct the identifier", &[reference])),
             "animation" | "animation_controller" => ex(
                 High,
-                format!("it never plays; define {reference} in a RESOURCE pack's animations (a behavior-pack definition does not count), or remove it from the entity"),
+                tf("it never plays; define {0} in a RESOURCE pack's animations (a behavior-pack definition does not count), or remove it from the entity", &[reference]),
             ),
-            "render" => ex(High, format!("the entity does not render; define {reference} in render_controllers/, or use one of the game's")),
-            "material" => ex(High, format!("the entity may not render; use a game material (entity_alphatest, entity, ...) or define {reference} in materials/")),
-            "atlas" => ex(High, "the block or item shows the missing texture; add the image or correct the path in the atlas"),
+            "render" => ex(High, tf("the entity does not render; define {0} in render_controllers/, or use one of the game's", &[reference])),
+            "material" => ex(High, tf("the entity may not render; use a game material (entity_alphatest, entity, ...) or define {0} in materials/", &[reference])),
+            "atlas" => ex(High, tr("the block or item shows the missing texture; add the image or correct the path in the atlas")),
             "texture slot" | "geometry slot" | "material slot" => ex(
                 High,
-                "the render controller asks the entity for a name it does not declare; declare it in the entity, or change the controller",
+                tr("the render controller asks the entity for a name it does not declare; declare it in the entity, or change the controller"),
             ),
-            _ => ex(High, "add what is referenced, or remove the reference"),
+            "function" => ex(High, tf("the command fails, and the game may refuse the function that calls it; add {0}, or correct the name", &[reference])),
+            "script file" => ex(High, tf("the pack's scripts do not load; add {0}, or correct the path", &[reference])),
+            "script module" => ex(High, tf("the script does not load; add {0} to the dependencies in manifest.json", &[reference])),
+            "animation name" => ex(High, tf("it never runs; declare {0} in description.animations, or remove it from scripts.animate", &[reference])),
+            "behavior animation" | "behavior controller" => ex(
+                High,
+                tf("it never runs; define {0} in this BEHAVIOR pack (a resource-pack definition does not count here), or remove it from the entity", &[reference]),
+            ),
+            "recipe key" => ex(High, tf("the recipe is not loaded; add '{0}' to its key, or remove it from the pattern", &[reference])),
+            _ => ex(High, tr("add what is referenced, or remove the reference")),
+        },
+        Issue::Dead { kind, reference, .. } => match *kind {
+            "loot table" | "trade table" => ex(Medium, tf("nothing comes from it; add {0}, or correct the path, or remove it if nothing should", &[reference])),
+            "component group" => ex(Medium, tf("that part of the event does nothing; define {0} in component_groups, or remove it from the event", &[reference])),
+            "event" => ex(Medium, tf("nothing happens at that moment; define {0} in events, or correct the name", &[reference])),
+            _ => ex(Medium, tf("the packs here define others in its namespace, but not this one: it does nothing unless a pack that is not here defines it; define {0}, or correct the name", &[reference])),
         },
         Issue::CaseMismatch { reference, on_disk, .. } => ex(
             High,
-            format!("works on Windows, missing texture on Android/iOS; write the reference as the file is named ({on_disk}), or rename the file to {reference}"),
+            tf("works on Windows, missing texture on Android/iOS; write the reference as the file is named ({0}), or rename the file to {1}", &[on_disk, reference]),
         ),
         Issue::EmptyTextureSet { shortname, .. } => {
-            ex(High, format!("always the missing texture; give {shortname} a texture path, or remove the entry"))
+            ex(High, tf("always the missing texture; give {0} a texture path, or remove the entry", &[shortname]))
         }
         Issue::Unreadable { why, .. } => {
-            ex(Medium, format!("nothing inside was checked, and the game may reject it too; fix the syntax ({why})"))
+            ex(Medium, tf("nothing inside was checked, and the game may reject it too; fix the syntax ({0})", &[why]))
         }
     }
 }

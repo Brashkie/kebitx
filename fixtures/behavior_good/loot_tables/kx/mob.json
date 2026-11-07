@@ -1,0 +1,1 @@
+{ "pools": [ { "rolls": 1, "entries": [ { "type": "item", "name": "kx:gem" }, { "type": "item", "name": "kx:mob_spawn_egg" }, { "type": "item", "name": "minecraft:not_judged" }, { "type": "loot_table", "name": "loot_tables/chests/simple_dungeon.json" } ] } ] }

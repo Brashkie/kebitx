@@ -1,0 +1,1 @@
+{ "tiers": [ { "trades": [ { "wants": [ { "item": "kx:gem" } ], "gives": [ { "item": "minecraft:emerald", "functions": [ { "function": "enchant" } ] } ] } ] } ] }

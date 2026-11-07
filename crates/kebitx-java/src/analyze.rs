@@ -126,6 +126,18 @@ impl JavaReport {
     }
 }
 
+/// The installed game to check a source against: the pack's format, or the one
+/// version a mod names; else the newest stable one.
+pub fn game_for(java: &crate::game::JavaAssets, kind: &Kind) -> Option<JavaJar> {
+    match kind {
+        Kind::ResourcePack { formats } => java.jar_in(*formats),
+        Kind::Mod {
+            minecraft: Some(m), ..
+        } => java.jar_for_requirement(m).or_else(|| java.jar_for(None)),
+        _ => java.jar_for(None),
+    }
+}
+
 /// What a source is: a mod (by its metadata), a resource pack, or bare assets.
 pub fn kind_of(src: &Source, files: &BTreeSet<String>) -> Kind {
     if let Some(m) = crate::meta::read(src) {

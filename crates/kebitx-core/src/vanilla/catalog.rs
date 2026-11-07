@@ -48,6 +48,9 @@ pub struct VanillaCatalog {
     /// Material names (lowercased) the game defines in `materials/*.material`,
     /// or that its own entities use.
     materials: HashSet<String>,
+    /// Loot and trade tables of the behavior stack, by lowercased path. Only
+    /// behavior packs ask for these; nothing the client resolves looks here.
+    behavior_files: HashSet<String>,
     pub version: String,
     pub bundles_read: usize,
     pub bundles_bad: usize,
@@ -123,7 +126,13 @@ impl VanillaCatalog {
         }) {
             c.merge(part);
         }
+        c.behavior_files = behavior_tables(install);
         c
+    }
+
+    /// Does the game have this loot or trade table (a lowercased path)?
+    pub fn has_behavior_file(&self, lower_path: &str) -> bool {
+        self.behavior_files.contains(lower_path)
     }
 
     /// Fold a partial catalog into this one.
@@ -512,6 +521,48 @@ fn as_u32(v: &Json) -> Option<u32> {
 
 /// A tile of the terrain atlas, and which of its textures (`atlas_index`)
 /// when it lists several.
+/// The tables in every folder of the behavior stack. All of them, experiments
+/// included: a pack made for an experiment must not read as broken.
+fn behavior_tables(install: &Path) -> HashSet<String> {
+    let is_table = |p: &str| {
+        (p.starts_with("loot_tables/") || p.starts_with("trading/")) && p.ends_with(".json")
+    };
+    let mut layers = super::samples_layer(install, "behavior_packs")
+        .into_iter()
+        .collect::<Vec<_>>();
+    if let Some(stack) = super::stack_dir(install, "behavior_packs") {
+        if let Ok(entries) = std::fs::read_dir(stack) {
+            layers.extend(entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()));
+        }
+    }
+    let mut out = HashSet::new();
+    for layer in layers {
+        for file in crate::filesystem::all_files(&layer) {
+            if let Ok(rel) = file.strip_prefix(&layer) {
+                let rel = rel
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_ascii_lowercase();
+                if is_table(&rel) {
+                    out.insert(rel);
+                }
+            }
+        }
+        for bundle in brarchive::bundles(&layer) {
+            if let Ok(archive) = Brarchive::open(&bundle) {
+                let folder = brarchive::folder_of(&layer, &bundle);
+                for name in archive.entries.keys() {
+                    let full = format!("{folder}/{name}").to_ascii_lowercase();
+                    if is_table(&full) {
+                        out.insert(full);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TileRef {
     pub tile: String,

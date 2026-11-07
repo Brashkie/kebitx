@@ -25,7 +25,7 @@ use std::time::UNIX_EPOCH;
 
 const MAGIC: &[u8; 8] = b"KBXCATLG";
 /// Bump whenever the catalog's content or this encoding changes.
-const FORMAT: u32 = 5;
+const FORMAT: u32 = 6;
 /// A real cache is about 1 MB; anything near this is not one.
 const CACHE_MAX_BYTES: u64 = 256 * 1024 * 1024;
 
@@ -121,6 +121,7 @@ pub(super) fn encode(c: &VanillaCatalog, key: &str) -> Vec<u8> {
         &c.asset_stems,
         &c.materials,
         &c.item_atlas,
+        &c.behavior_files,
     ] {
         w.set(set);
     }
@@ -210,6 +211,7 @@ pub(super) fn decode(b: &[u8], expected_key: &str) -> Option<VanillaCatalog> {
     c.asset_stems = r.set()?;
     c.materials = r.set()?;
     c.item_atlas = r.set()?;
+    c.behavior_files = r.set()?;
     let ns = r.count(12)?;
     let mut sizes = HashMap::with_capacity(ns);
     for _ in 0..ns {
@@ -374,6 +376,7 @@ mod tests {
         c.textures.insert("textures/entity/cow/cow.png".into());
         c.geometries.insert("geometry.cow".into());
         c.materials.insert("entity_alphatest".into());
+        c.behavior_files.insert("loot_tables/chests/a.json".into());
         c.asset_stems.insert("sounds/mob/cow/say1".into());
         c.texture_sizes
             .insert("textures/entity/cow/cow".into(), (64, 32));

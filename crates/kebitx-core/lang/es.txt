@@ -1,0 +1,264 @@
+muestra la textura faltante; añade {0}.png (o .tga), o apunta la entidad a una textura que exista
+la entidad es invisible; añade un modelo que defina {0}, o corrige el identificador
+nunca se reproduce; define {0} en las animaciones de un pack de RECURSOS (una definición en un pack de comportamiento no cuenta), o quítala de la entidad
+la entidad no se dibuja; define {0} en render_controllers/, o usa uno del juego
+puede que la entidad no se dibuje; usa un material del juego (entity_alphatest, entity, ...) o define {0} en materials/
+el bloque o ítem muestra la textura faltante; añade la imagen o corrige la ruta en el atlas
+el controlador de render pide a la entidad un nombre que no declara; decláralo en la entidad, o cambia el controlador
+el comando falla, y el juego puede rechazar la función que lo llama; añade {0}, o corrige el nombre
+los scripts del pack no cargan; añade {0}, o corrige la ruta
+el script no carga; añade {0} a las dependencias de manifest.json
+nunca se ejecuta; declara {0} en description.animations, o quítala de scripts.animate
+nunca se ejecuta; define {0} en este pack de COMPORTAMIENTO (una definición en un pack de recursos no cuenta aquí), o quítala de la entidad
+la receta no se carga; añade '{0}' a su clave, o quítalo del patrón
+añade lo que se referencia, o quita la referencia
+no sale nada de ahí; añade {0}, corrige la ruta, o quítala si no debe salir nada
+esa parte del evento no hace nada; define {0} en component_groups, o quítalo del evento
+no pasa nada en ese momento; define {0} en events, o corrige el nombre
+los packs de aquí definen otros en su espacio de nombres, pero no este: no hace nada salvo que lo defina un pack que no está aquí; define {0}, o corrige el nombre
+funciona en Windows, textura faltante en Android/iOS; escribe la referencia como se llama el archivo ({0}), o renombra el archivo a {1}
+siempre la textura faltante; dale a {0} una ruta de textura, o quita la entrada
+no se comprobó nada de dentro, y puede que el juego también lo rechace; corrige la sintaxis ({0})
+textura
+geometría
+animación
+controlador de animación
+controlador de render
+material
+atlas
+ranura de textura
+ranura de geometría
+ranura de material
+función
+archivo de script
+módulo de script
+nombre de animación
+animación de comportamiento
+controlador de comportamiento
+clave de receta
+tabla de botín
+tabla de comercio
+grupo de componentes
+evento
+ítem
+bloque
+entidad
+feature
+mayúsculas erróneas
+conjunto de texturas vacío
+ilegible
+{0}: el modelo {1} no existe
+{0}: la textura {1} no existe
+{0}: una cara pide #{1}, que su cadena nunca define (se ve la textura faltante; lo usa {2})
+{0}: {1}x{2} no se divide en fotogramas de {3}x{4} (el juego lo rechaza)
+{0}: ilegible ({1})
+{0}: no es un PNG (el juego comprueba la firma y lo rechaza)
+{0}: {1}x{2}, la del juego es {3}x{4} (otras proporciones)
+{0}: faltan {1} de {2} claves en inglés (se ve en inglés)
+la clase {0} no existe (la usa {1}, {2} clase(s))
+el campo {0}.{1} {2} no existe (lo usa {3}, {4} clase(s))
+el método {0}.{1} {2} no existe (lo usa {3}, {4} clase(s))
+el mixin {0} apunta a {1}, que no existe
+mixin {0}: {1} {2} no está en {3} (Mixin rechaza la clase al arrancar)
+mixin {0}: {1} no encuentra {2} (obligatorio: el juego no arranca)
+mixin {0}: {1} no encuentra {2} (no obligatorio: no hace nada, en silencio)
+{0} no está en el .jar del juego (lo usa {1}; puede venir de: {2})
+el mod {0} está en {1} jars: {2} (el cargador se niega a arrancar)
+{0} ({1}) necesita {2} {3}, y ningún mod de aquí lo aporta
+{0} ({1}) necesita {2} {3}; aquí es {4}
+{0} ({1}) declara que rompe {2} {3}; aquí: {4}
+{0} usan @Overwrite en {1}.{2}: solo sobrevive un cambio
+mods de {0} en una carpeta: cada cargador carga solo los suyos
+{0}: sin metadatos de mod (una biblioteca, o no es un mod)
+Juego: Java {0}
+Juego: Java {0} (la más nueva instalada: no es la versión que pide)
+Juego: no instalado, así que no se comprobó nada del juego
+Juego: no instalado, así que no se comprobaron las referencias a él
+Juego: Bedrock {0}
+Mods: {0}
+Packs: {0}
+Entidades: {0}
+Referencias de comportamiento: {0}
+No verificables aquí: {0}
+Mayúsculas erróneas: {0}
+Errores de compatibilidad: {0}
+Recursos sin usar: {0}
+Referencias comprobadas: {0}
+Clases: {0}
+{0} error(es) de compatibilidad entre los packs: ejecuta `kebitx analyze` en cada uno
+Carpeta de mods de Java
+Pack de recursos de Java
+Recursos de Java
+Mod de {0}: {1}
+Pack de Bedrock
+Mundo de Bedrock
+Cancelado
+Aquí no hay pack, mundo ni mods
+Un pack tiene manifest.json, un mundo tiene level.dat, y una carpeta de mods tiene archivos .jar.
+Esta carpeta contiene 1 pack: abre ese.
+Esta carpeta contiene {0} packs: abre uno de ellos.
+Mundo sin packs
+No lleva ninguno, y sus listas no activan ninguno que se pueda encontrar, así que no hay nada que comprobar.
+Pack de comportamiento sin nada que comprobar
+No nombra ningún archivo, ítem ni evento que se pueda seguir.
+Leyendo el juego
+Comprobando referencias
+Comprobando compatibilidad
+Buscando archivos sin usar
+Analizando
+Hay reparaciones para packs y mundos de Bedrock, y para carpetas de mods de Java.
+No es una carpeta.
+Aquí no hay nada que kebitx pueda reparar con seguridad.
+Primero se hace copia de cada archivo, y el resultado se queda solo si es estrictamente mejor.
+Vista previa de la reparación
+No se cambió nada
+La carpeta cambió desde la vista previa. Vuelve a generar la vista previa.
+La reparación falló
+Problemas: {0} antes, {1} después.
+Reparación aplicada
+Copia de seguridad: {0}
+Reparación revertida
+No fue estrictamente mejor, así que cada archivo quedó como estaba.
+Reparación deshecha
+{0} archivo(s) restaurado(s).
+No se pudo deshacer
+Editar {0}: {1} -> {2} ({3} veces). {4}
+Borrar {0}. {1}
+Quitar {0}: {1}
+Inicio
+Abrir carpeta...
+Abrir archivo...
+Analizar
+Vista previa
+Aplicar reparación...
+Deshacer reparación...
+Mostrar carpeta
+Copiar informe
+Copiado
+Cancelar
+Tema
+Oscuro
+Claro
+Sistema
+Escribe o pega la ruta de un pack, un mundo, un mod o una carpeta de mods
+Filtra la lista: un nombre, un archivo, un tipo de problema (Ctrl+F)
+Nada en la lista coincide con el filtro.
+Aquí no se encontró nada. Elige una carpeta o un archivo arriba.
+No hay hallazgos que mostrar.
+Tipo
+Hallazgo
+Nombre
+Carpeta
+Todo
+Problemas
+No hacen nada
+Notas
+Mundos
+Packs de comportamiento
+Packs de recursos
+Problema
+Cambio
+Problema nuevo
+Nota
+No hace nada
+Reciente
+Mundo
+Pack de comportamiento
+Pack de comportamiento (dev)
+Pack de recursos
+Pack de recursos (dev)
+Carpeta de mods
+Mods de Java
+¿Qué quieres comprobar?
+Esto está en tu equipo: haz doble clic en uno, o pulsa Enter. Para otra cosa, escribe o pega una ruta, elige una carpeta o un archivo, o suéltalo en esta ventana.
+Nada que comprobar en las carpetas habituales del juego. Escribe o pega una ruta, elige una carpeta o un archivo, o suéltalo en esta ventana.
+Analizando...
+Planificando la reparación...
+Reparando...
+Deshaciendo la reparación...
+Buscando Minecraft...
+Cancelando...
+Análisis cancelado
+No se cambió nada.
+El motor no pudo leer eso
+Revisa la ruta: debe ser una carpeta, o un archivo .jar o .zip.
+El motor no pudo planificar una reparación
+Nada que reparar
+Vista previa: 1 cambio. Todavía no se ha escrito nada.
+Vista previa: {0} cambios. Todavía no se ha escrito nada.
+La reparación no dio respuesta
+Deshacer no dio respuesta
+Revisa la carpeta: el motor no dio respuesta.
+OK: nada demostrado como roto
+1 problema
+{0} problemas
+1 que no hace nada
+{0} que no hacen nada
+Paso {0} de {1}: {2}
+¿Aplicar los cambios de la vista previa?
+Primero se hace copia de cada archivo. La carpeta se analiza de nuevo, y el resultado se queda solo si es estrictamente mejor.
+¿Deshacer la reparación?
+Cada archivo que cambió vuelve a como estaba, incluido cualquier cambio hecho después en esos archivos.
+Hay una reparación en curso. Terminará en un momento.
+Elige un pack, un mundo o una carpeta de mods
+Elige un mod o un pack
+Mods y packs (*.jar, *.zip)
+Todos los archivos
+Windows no pudo abrir su diálogo de archivos
+Escribe o pega la ruta arriba, o suelta aquí la carpeta.
+Esa ruta no se puede leer como texto
+Falta el motor
+Junto a este programa debe estar un kebitx_ffi.dll actual.
+Sin memoria
+No se pudo iniciar
+Mira lo que cambiaría una reparación. No se escribe nada.
+Primero hace copia de cada archivo, y conserva el resultado solo si es estrictamente mejor.
+Devuelve cada archivo que cambió la reparación.
+Copia el informe completo, para pegarlo donde quieras.
+Lo abre en el explorador de archivos.
+Motor semántico para packs de Minecraft
+Agrupar por causa
+Ver todos los hallazgos
+Afecta a:
+Empaquetar...
+Guardar el paquete
+Tiene 1 problema. ¿Empaquetar de todos modos?
+Tiene {0} problemas. ¿Empaquetar de todos modos?
+Quien lo instale también los tendrá.
+Paquete creado
+Archivo: {0}
+Archivos: {0}
+No se pudo crear el paquete
+Solo se puede empaquetar un pack o un mundo.
+El paquete no puede ir dentro de la carpeta que empaqueta.
+Creando el paquete...
+Lo pone todo en un archivo, listo para abrir en Minecraft.
+Pack de Minecraft (*.mcpack)
+Mundo de Minecraft (*.mcworld)
+Los packs que usa de las carpetas del juego no van dentro: quien lo abra también los necesita.
+Inspeccionar mundo
+Lee todo lo guardado en este mundo. No se escribe nada.
+Leyendo el mundo...
+Leyendo el mundo
+Mundo: {0}
+Versión: {0}
+Semilla: {0}
+Mundo normal
+Nether
+El End
+Dimensión {0}
+{0}: {1} chunks
+Bloques, sin aire: {0}
+Entidades de bloque: {0}
+Jugadores: {0}
+Tamaño: {0} en disco; descomprimido, terreno {1}, entidades {2}, entidades de bloque {3}, jugadores {4}, otros {5}
+Formato antiguo, sin contar: {0} partes de chunk
+Ilegibles: {0}
+No se pudo leer el mundo
+Bloque
+Entidad
+Entidad de bloque
+Tipos de bloque
+Tipos de entidad
+Tipos de entidad de bloque
+Cantidad
